@@ -15,8 +15,13 @@
 --     lua dev/preview.lua <thurbox-ui-dir> [width] [scenario]
 --
 -- `<thurbox-ui-dir>` is an interface directory — `~/.config/thurbox/ui` or a
--- checkout's `ui/` — because the pane requires `lib.theme` and `lib.widgets`
--- from it. Scenarios: `full` (default), `no-session`, `bare`, `off`.
+-- checkout's `ui/` — because the pane requires `lib.theme`, `lib.widgets` and
+-- `lib.panels` from it. Scenarios: `full` (default),
+-- `no-session`, `bare`.
+--
+-- `width` is the column's width — the rect `layout.lua` gives the `info` slot,
+-- which is what the pane is handed and what every width budget inside it is
+-- measured against.
 --
 -- A row wider than the pane is flagged: the renderer would clip it silently, and
 -- silent clipping is what wrapping and `clip` exist to prevent.
@@ -37,7 +42,6 @@ local SESSION = "s1-0000-0000-0000-000000000000"
 -- shape follows `LuaHost::publish` in the thurbox repository.
 thurbox = {
   taken_at_ms = 1700000000000,
-  settings = { features = { info_panel = true } },
   registry = { settings = {} },
   theme = {
     name = "preview",
@@ -149,8 +153,6 @@ function command() end
 
 if SCENARIO == "no-session" then
   store.selected = nil
-elseif SCENARIO == "off" then
-  thurbox.settings.features.info_panel = false
 elseif SCENARIO == "bare" then
   -- The first frame after a spawn: nothing sampled, nothing scheduled.
   thurbox.metrics = {}
@@ -200,7 +202,8 @@ local function flatten(node, out)
   return out
 end
 
-local ok, node = pcall(pane.render, { width = WIDTH, height = 60, focused = true })
+-- The centre's tree, standing in for the agent terminal the panel sits beside.
+local ok, node = pcall(pane.render, { width = WIDTH, height = 60, focused = false })
 if not ok then
   io.stderr:write("RENDER ERROR: " .. tostring(node) .. "\n")
   os.exit(1)
@@ -210,7 +213,7 @@ local lines = flatten(node, {})
 local inner = WIDTH - 2
 local title = (node.frame and node.frame.title) or "?"
 local overflow = 0
-print(string.format("%s  width=%d  scenario=%s", title, WIDTH, SCENARIO))
+print(string.format("%s  column=%d  scenario=%s", title, WIDTH, SCENARIO))
 print("+" .. string.rep("-", inner) .. "+")
 for _, line in ipairs(lines) do
   local len = utf8.len(line) or #line

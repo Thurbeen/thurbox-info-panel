@@ -1,0 +1,9 @@
+# Markdown lint, matching the thurbox repository's conventions so prose here reads
+# the same as prose there.
+
+[MD013]
+line_length = 100
+# A rendered pane is as wide as it is: the preview in README.md is three columns
+# of real output, and rewrapping it would stop it being what the panel draws.
+tables = false
+code_blocks = false

@@ -23,6 +23,7 @@
 -- It declares no `input` and mutates nothing: like v1's panel it is a readout,
 -- so it has no scoped keyboard beyond the one key that brings it forward.
 
+local panels = require("lib.panels")
 local theme = require("lib.theme")
 local widgets = require("lib.widgets")
 
@@ -306,7 +307,12 @@ end
 local PCT = 6
 local GAP = 2
 local MAX_BAR = 24
-local MIN_BAR = 4
+
+--- Below this a bar is not worth its columns. Four blocks quantise a percentage
+--- into quarters, which the number beside it already states exactly — so when a
+--- group cannot afford both, the DETAIL is what stays: `15.2/31.3 GB` is
+--- information no bar can carry.
+local USEFUL_BAR = 8
 
 --- Colour by pressure, not by value: 85% means the same thing whatever is being
 --- measured, and the theme's own roles keep it right in all thirty-six palettes.
@@ -321,11 +327,22 @@ end
 
 --- One bar length for a GROUP of gauges, and whether their details fit.
 ---
---- A gauge whose bar is shorter than the one above it cannot be read against it,
---- which is the only reason to draw bars instead of printing percentages. So the
---- group pays for its LONGEST detail and every bar in it comes out the same
---- length — including the rows that have no detail. When even that leaves no room
---- for a bar, the whole group drops its details together rather than half of them.
+--- Three properties, each learned from getting it wrong:
+---
+--- * **Every bar in a group is the same length**, the rows with no detail
+---   included. A gauge that cannot be read against the one above it defeats the
+---   only reason to draw a bar instead of printing the number.
+--- * **A group takes bars or details, never both for some rows and one for
+---   others.** At the default 38-column width the System group's bars came out
+---   four blocks wide beside `15.2/31.3 GB`; dropping the bar and keeping the
+---   numbers is the better trade, and it must apply to the whole group.
+--- * **Details are only kept when they fit at all.** Narrower still, there is no
+---   room for the numbers either, and the bar comes back — because a bar shrinks
+---   gracefully and a string does not.
+---
+--- Returns the bar's length — 0 for "draw none" — and whether details are kept.
+--- Between them the row is exactly `INDENT + LABEL + PCT + bar + detail` wide,
+--- which is what lets `meter` do no clipping of its own.
 local function group_bar(details, width)
   local longest = 0
   for _, detail in ipairs(details) do
@@ -334,56 +351,41 @@ local function group_bar(details, width)
     end
   end
   local room = inner_width(width) - #INDENT - LABEL - PCT
-  if room - longest < MIN_BAR then
-    -- No room for the details: bars only, all of them equal.
-    return math.max(MIN_BAR, math.min(room, MAX_BAR)), false
+  local bars_only = math.max(0, math.min(room, MAX_BAR))
+
+  if longest == 0 or room < longest then
+    return bars_only, false
   end
-  return math.max(MIN_BAR, math.min(room - longest, MAX_BAR)), true
+  if room - longest < USEFUL_BAR then
+    return 0, true
+  end
+  return math.min(room - longest, MAX_BAR), true
 end
 
---- A labelled gauge on one line: `CPU   ████░░░░   38%  11.2/15.9 GB`.
+--- A labelled gauge on one line: `RAM   ██████░░░░  49%  15.2/31.3 GB`.
 ---
---- The bar is sized from what is left after the label, the percentage AND the
---- detail. Budgeting for the first two only is how a detail string ends up
---- clipped at the pane edge in a narrow column, and every fix by subtraction is
---- one column short of the next terminal width. So the DETAIL is served first
---- and the bar takes the remainder: a bar stays legible at any length above a
---- few columns, and `15.9 G…` is legible at none. Below the point where both
---- fit, the detail is dropped rather than truncated — the gauge beside it
---- already carries the same number approximately.
+--- `bar` and `detail` are decided by `group_bar` rather than here, so every gauge
+--- in a section agrees. A `bar` of 0 draws the row without one, which is a real
+--- outcome and not an empty gauge.
 ---
---- `percent` overrides the number shown, for the one gauge whose value is not
---- its ratio: a process using two cores is at 200%, which has no place on a bar
---- that ends at one.
-local function meter(label, ratio, detail, width, percent, bar)
+--- `percent` overrides the number shown, for a value that is not its own ratio.
+local function meter(label, ratio, detail, percent, bar)
   ratio = math.max(0, math.min(ratio or 0, 1))
-  local inner = inner_width(width)
-  local fixed = #INDENT + LABEL + PCT
-  local shown = nil
-  if detail and inner - fixed - (GAP + widgets.len(detail)) >= MIN_BAR then
-    shown = detail
+  bar = bar or 0
+  local spans = { { text = INDENT .. widgets.pad(label, LABEL), style = { fg = theme.muted } } }
+  if bar > 0 then
+    local filled = math.floor(ratio * bar + 0.5)
+    spans[#spans + 1] = { text = string.rep("█", filled), style = { fg = pressure(ratio) } }
+    spans[#spans + 1] = { text = string.rep("░", bar - filled), style = { fg = theme.muted } }
   end
-  if not bar then
-    local room = inner - fixed - (shown and (GAP + widgets.len(shown)) or 0)
-    bar = math.max(MIN_BAR, math.min(room, MAX_BAR))
-  end
-  local filled = math.floor(ratio * bar + 0.5)
-  return {
-    type = "text",
-    len = 1,
-    text = {
-      {
-        { text = INDENT .. widgets.pad(label, LABEL), style = { fg = theme.muted } },
-        { text = string.rep("█", filled), style = { fg = pressure(ratio) } },
-        { text = string.rep("░", bar - filled), style = { fg = theme.muted } },
-        {
-          text = string.format(" %3d%%", math.floor((percent or ratio * 100) + 0.5)),
-          style = { fg = theme.text, bold = true },
-        },
-        { text = shown and (string.rep(" ", GAP) .. shown) or "" },
-      },
-    },
+  spans[#spans + 1] = {
+    text = string.format(" %3d%%", math.floor((percent or ratio * 100) + 0.5)),
+    style = { fg = theme.text, bold = true },
   }
+  if detail then
+    spans[#spans + 1] = { text = string.rep(" ", GAP) .. detail, style = { fg = theme.muted } }
+  end
+  return { type = "text", len = 1, text = { spans } }
 end
 
 -- ── sections ────────────────────────────────────────────────────────────────
@@ -589,7 +591,13 @@ local function push_agent(rows, m, width)
       local consumed = math.floor(m.context_window * m.context_used_percent / 100 + 0.5)
       detail = string.format("%s/%s", format_tokens(consumed), format_tokens(m.context_window))
     end
-    rows[#rows + 1] = meter("Context", m.context_used_percent / 100, detail, width)
+    -- A group of one, so this row obeys the same bar-or-detail rule the sections
+    -- with several gauges do. Budgeting it alone is how it ended up showing a
+    -- full-width bar and dropping `142.0k/200.0k`, which is the half that says
+    -- how much room is left.
+    local bar, keep = group_bar({ detail or "" }, width)
+    rows[#rows + 1] =
+      meter("Context", m.context_used_percent / 100, keep and detail or nil, nil, bar)
   end
 
   if m.lines_added or m.lines_removed then
@@ -658,7 +666,7 @@ local function push_usage(rows, usage, host, width)
     local window = windows[index]
     local percent = window.used_percent or 0
     local detail = keep and details[index] ~= "" and details[index] or nil
-    rows[#rows + 1] = meter(window.label or "?", percent / 100, detail, width, percent, bar)
+    rows[#rows + 1] = meter(window.label or "?", percent / 100, detail, percent, bar)
   end
 end
 
@@ -671,8 +679,8 @@ local function push_system(rows, system, width)
   -- can be read against each other.
   local bar, keep = group_bar({ pair }, width)
 
-  rows[#rows + 1] = meter("CPU", (system.cpu_percent or 0) / 100, nil, width, nil, bar)
-  rows[#rows + 1] = meter("RAM", ratio, keep and pair or nil, width, nil, bar)
+  rows[#rows + 1] = meter("CPU", (system.cpu_percent or 0) / 100, nil, nil, bar)
+  rows[#rows + 1] = meter("RAM", ratio, keep and pair or nil, nil, bar)
 end
 
 --- The automations that would fire, with their schedules.
@@ -762,49 +770,102 @@ end
 --- The panel in its frame. One place builds the box, so the empty states below
 --- are framed exactly like the full one — an unbordered message would read as a
 --- pane that failed to draw.
-local function panel(ctx, rows)
+---
+--- Always drawn as UNFOCUSED, and not because the flag was forgotten: this panel
+--- cannot take focus (see the declaration below), so a focused border would
+--- promise a keyboard it does not have. v1 drew it with `border_unfocused` for
+--- the same reason.
+local function panel(rows)
   return {
     type = "box",
-    frame = widgets.panel("Info", ctx.focused),
+    frame = widgets.panel("Info", false),
     children = rows,
   }
 end
 
---- A framed explanation, wrapped.
----
---- Wrapped rather than one line because these are sentences, not values: the
---- longest of them names a settings key and overran a 44-column column, which is
---- the width v1 gave this panel.
-local function saying(ctx, text)
-  local lines = wrap_text(text, math.max(1, inner_width(ctx.width or 0) - #INDENT))
-  local out = {}
-  for index = 1, #lines do
-    out[index] = { { text = INDENT .. lines[index], style = { fg = theme.muted } } }
+--- The panel's rows for the selected session, or the empty state.
+local function body(width)
+  local snapshot = thurbox or {}
+
+  local session = selected_session()
+  local metrics = snapshot.metrics or {}
+  local system = metrics.system
+  local own = session and (metrics.sessions or {})[session.id] or nil
+
+  local rows = {}
+
+  if session then
+    push_session(rows, session, name_of(session.parent), width)
+    push_repos(rows, session, width)
+    -- Absent means "not computed yet", which the panel must not draw as a clean
+    -- tree.
+    if session.git then
+      push_git(rows, session.git, width)
+    end
+    if own then
+      push_session_resources(rows, own, width)
+    end
+    if own and own.agent then
+      push_agent(rows, own.agent, width)
+    end
+    if own and own.usage then
+      push_usage(rows, own.usage, session.host, width)
+    end
+  else
+    -- v1 returned before painting its block when there was no session. An empty
+    -- bordered box is worse than either that or this: the panel says what it is
+    -- waiting for, and the System section below still has news.
+    rows[#rows + 1] =
+      plain_row({ { text = "no session selected", style = { fg = theme.muted } } }, width)
   end
-  return panel(ctx, { { type = "text", len = #out, text = out } })
+
+  -- The kernel publishes a ZEROED machine table before the first sample rather
+  -- than omitting it, so `system ~= nil` is not the question. A total memory of
+  -- zero is: no machine reports that, so it means nothing has been sampled yet —
+  -- and `0.0/0.0 KB` is a worse answer than no section.
+  if system and (system.memory_total or 0) > 0 then
+    push_system(rows, system, width)
+  end
+  push_automations(rows, snapshot.automations or {}, width)
+
+  -- A spacer that takes the remainder, so the rows stack from the top instead of
+  -- spreading down the column. Every row above declares `len`, and a child with
+  -- no length declared is what shares what is left.
+  rows[#rows + 1] = blank()
+  rows[#rows].len = nil
+
+  return rows
 end
 
 return {
   name = NAME,
-  -- The centre, shared with the agent terminal, because that is the only slot
-  -- the shipped `layout.lua` offers a plugin: the manager never writes the
-  -- arrangement, so a pane asking for a slot of its own installs and then never
-  -- draws. `F2` brings it forward and puts the terminal back.
-  --
-  -- v1's geometry was a column BESIDE the terminal. README.md has that recipe —
-  -- three lines in `layout.lua` and a one-word edit here — for anyone who wants
-  -- it and is willing to edit the arrangement to get it.
-  slot = "center",
-  slot_mode = "switch",
-  order = 30,
-  -- Focusable because in a switch slot focus is what makes a pane DRAWN, not
-  -- merely what gives it the keyboard. A readout that could not be focused
-  -- could not be shown.
-  focusable = true,
 
-  -- The action band's entry for this pane, so it is offered on screen rather
-  -- than only by a key somebody has to know. The kernel reports a switch
-  -- alternate with no pill as undiscoverable, and it is right to.
+  -- Its own COLUMN, and `layout.lua` places it — which is why installing this
+  -- needs the three lines README.md gives you. That edit is not an oversight to
+  -- be worked around; it is the kernel's second rule holding:
+  --
+  --   **Layout resolves before render.** Each pane is called with the rect it is
+  --   drawing into, so a column has to exist before anything draws into it.
+  --
+  -- A `decorates = "center"` version of this pane needs no such edit and was
+  -- written first. It is wrong, and instructively so: the centre's occupant has
+  -- ALREADY rendered by the time a decorator sees its tree, so shrinking that
+  -- tree hands the terminal pane a rect it did not compose for — its title, its
+  -- own truncation and its surface geometry were all decided at the full width.
+  -- The visible symptom is the agent's frame losing its right border, because a
+  -- title built for 100 columns was painted into 62. Decorators restyle a tree
+  -- (matching `id`/`class`/`role`); they must not resize one.
+  slot = "info",
+  order = 30,
+
+  -- NOT focusable, exactly as v1's panel was not: it is a readout with no scoped
+  -- keyboard, no cursor and nothing to mutate, and it declares no `input`. So it
+  -- is absent from the `Ctrl+H`/`Ctrl+L` ring and can never hold the selection —
+  -- `F2` shows and hides it rather than moving focus to it.
+  focusable = false,
+
+  -- The action band's entry, so the panel is offered on screen and not only to
+  -- whoever knows the key. Clicking it runs the same toggle `F2` does.
   pills = {
     { action = "info.toggle", label = "info", priority = 30 },
   },
@@ -813,81 +874,25 @@ return {
     {
       key = "f2",
       action = "info.toggle",
-      desc = "session info",
+      desc = "show/hide the info panel",
       scope = "global",
-      group = "UI",
+      group = "Panels",
     },
   },
 
   render = function(ctx)
-    local snapshot = thurbox or {}
-    local width = ctx.width or 0
-
-    -- The kernel publishes every feature switch, including the ones it does not
-    -- act on, precisely so the pane owning a surface can honour its own. v1's
-    -- `[features] info_panel = false` hid this panel; here it is the panel's
-    -- job, and nothing else in thurbox reads that flag any more.
-    local features = snapshot.settings and snapshot.settings.features
-    if features and features.info_panel == false then
-      return saying(ctx, "switched off by [features] info_panel in settings.toml")
-    end
-
-    local session = selected_session()
-    local metrics = snapshot.metrics or {}
-    local system = metrics.system
-    local own = session and (metrics.sessions or {})[session.id] or nil
-
-    local rows = {}
-
-    if session then
-      push_session(rows, session, name_of(session.parent), width)
-      push_repos(rows, session, width)
-      -- Absent means "not computed yet", which the panel must not draw as a
-      -- clean tree.
-      if session.git then
-        push_git(rows, session.git, width)
-      end
-      if own then
-        push_session_resources(rows, own, width)
-      end
-      if own and own.agent then
-        push_agent(rows, own.agent, width)
-      end
-      if own and own.usage then
-        push_usage(rows, own.usage, session.host, width)
-      end
-    else
-      -- v1 returned before painting its block when there was no session. An
-      -- empty bordered box is worse than either that or this: the panel says
-      -- what it is waiting for, and the System section below still has news.
-      rows[#rows + 1] =
-        plain_row({ { text = "no session selected", style = { fg = theme.muted } } }, width)
-    end
-
-    -- The kernel publishes a ZEROED machine table before the first sample rather
-    -- than omitting it, so `system ~= nil` is not the question. A total memory of
-    -- zero is: no machine reports that, so it means nothing has been sampled yet
-    -- — and `0.0/0.0 KB` is a worse answer than no section.
-    if system and (system.memory_total or 0) > 0 then
-      push_system(rows, system, width)
-    end
-    push_automations(rows, snapshot.automations or {}, width)
-
-    -- A spacer that takes the remainder, so the rows stack from the top instead
-    -- of being spread down the column. Every row above declares `len`, and a
-    -- child with no length declared is what shares what is left.
-    rows[#rows + 1] = blank()
-    rows[#rows].len = nil
-
-    return panel(ctx, rows)
+    -- ctx.width is THIS COLUMN's, not the screen's — which is what every width
+    -- budget below is measured against.
+    return panel(body(ctx.width or 0))
   end,
 
   on_action = function(action)
     if action == "info.toggle" then
-      -- `toggle` is what makes one key a door that swings both ways: it focuses
-      -- this pane, and focuses whatever you came from when this pane already has
-      -- focus. Without it the key would be a one-way trip into a readout.
-      command("focus", { text = NAME, toggle = true })
+      -- Visibility, not focus, and it belongs in `lib.panels` rather than in this
+      -- file because `layout.lua` has to read it: the arrangement decides whether
+      -- to carve the column BEFORE this plugin runs, so the answer cannot live
+      -- inside the plugin. The bundled session list spells its F9 the same way.
+      panels.toggle(NAME)
       return true
     end
     return false
