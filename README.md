@@ -64,14 +64,19 @@ list and the terminal:
 
 ```lua
 if panels.shown("info") and filled(ctx, "info") then
-  columns[#columns + 1] = { slot = "info", pct = 30, min = 34 }
+  columns[#columns + 1] = { slot = "info", pct = 15, min = 30, max = 40 }
 end
 ```
 
 Both helpers are already in `layout.lua`: `panels.shown` is what `F2` toggles, and
 `filled` is the other half — turned off in the Interface tab, the column is not
-reserved either. `pct`/`min` are yours to tune; the panel is legible from about 28
-columns and the preview above is at 36.
+reserved either.
+
+**`max` is the part worth keeping.** This panel's content does not grow with the
+terminal: its rows are a label and a value, so past about 40 columns it is padding.
+A bare `pct = 30` handed it 57 columns of a 255-column screen. The percentage still
+shrinks it on a smaller terminal and `min` keeps it legible — the panel renders
+without overflow at any width, and is comfortable from 28.
 
 Then run `thurbox-cli plugin check`, and press **`F2`** (or click the **`info`**
 pill). It starts hidden, as v1's did.
@@ -157,6 +162,13 @@ Two properties worth knowing, because both were bugs first:
   renderer would clip an overlong row at the border silently. Values that matter
   (an agent's notification, a path) wrap under a hanging indent; composed number
   rows clip their own tail, which is the least important end.
+- **Narrow panels drop the aligned label column.** Alignment costs twelve columns
+  of *every* row, and below 36 that is nearly half of them — spent so values start
+  in one column while each one wraps across three lines. So the labels go ragged
+  (`Name: x` rather than `Name:     x`) and the values get the columns back.
+  Gauges keep an aligned column, because bars that do not start together cannot be
+  read against each other; what they give up is its *width*, padding to the
+  group's own longest label instead of a global ten.
 - **A bar is only drawn where there is a denominator.** The `System` rows have
   one (100% of the machine, total RAM) and get gauges. A *process* has one for
   neither: its CPU is a share of one core and passes 100% across several, and

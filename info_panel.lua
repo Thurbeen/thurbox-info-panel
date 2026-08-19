@@ -53,9 +53,38 @@ local function inner_width(width)
   return math.max(1, (width or 0) - BORDERS)
 end
 
---- Columns available for a row's value, after the margin and the label column.
-local function value_width(width)
-  return math.max(1, inner_width(width) - #INDENT - LABEL)
+--- Columns the value needs before a PADDED label column earns its place.
+---
+--- Alignment is not free: it costs `INDENT + LABEL` on every row, and on a narrow
+--- panel that is nearly half of them — spent so values start in one column while
+--- each one wraps across three lines. Below this the labels go ragged instead,
+--- which reads fine; a wrapped value does not.
+local COMPACT_VALUE_MIN = 22
+
+--- Is this width too narrow to pay for an aligned label column?
+local function compact(width)
+  return inner_width(width) - #INDENT - LABEL < COMPACT_VALUE_MIN
+end
+
+--- Where a row's label ends and its value begins, at this width.
+---
+--- Returns the first line's prefix, the indent continuation lines get, and the
+--- columns left for the value. One function, so every row below switches between
+--- aligned and compact together rather than each deciding for itself.
+---
+--- The continuation indent is always the prefix's own width, so wrapped lines sit
+--- under the value in both modes.
+local function shape(label, width)
+  local prefix
+  if compact(width) then
+    -- One space after the label. An empty label still gets an indent, so a
+    --- continuation row reads as subordinate without a column to line up under.
+    prefix = (label == "") and (INDENT .. " ") or (INDENT .. label .. " ")
+  else
+    prefix = INDENT .. widgets.pad(label, LABEL)
+  end
+  local used = widgets.len(prefix)
+  return prefix, string.rep(" ", used), math.max(1, inner_width(width) - used)
 end
 
 --- Automations listed before the section says "and N more". The panel is a
@@ -218,20 +247,14 @@ end
 --- continuation lines are indented to the value column, so the label column
 --- stays the thing that aligns them.
 local function field(label, value, style, width)
-  local lines = wrap_text(tostring(value), value_width(width))
+  local prefix, cont, room = shape(label, width)
+  local lines = wrap_text(tostring(value), room)
   local out = {}
   for index = 1, #lines do
-    if index == 1 then
-      out[index] = {
-        { text = INDENT .. widgets.pad(label, LABEL), style = { fg = theme.muted } },
-        { text = lines[index], style = style },
-      }
-    else
-      out[index] = {
-        { text = INDENT .. string.rep(" ", LABEL) },
-        { text = lines[index], style = style },
-      }
-    end
+    out[index] = {
+      { text = (index == 1) and prefix or cont, style = { fg = theme.muted } },
+      { text = lines[index], style = style },
+    }
   end
   return { type = "text", len = #out, text = out }
 end
@@ -262,12 +285,31 @@ local function clip(spans, room)
   return out
 end
 
+--- A further value for the row `label` started, aligned under that row's value.
+---
+--- Distinct from `field("", …)`, which lines up under a fixed label COLUMN. In
+--- compact mode there is no such column — each row's value starts wherever its own
+--- label ended — so a continuation has to be told which label it is continuing.
+--- Passing an empty one indented `website` by three columns while the
+--- `thurbox/fix/osc52` above it started at nine, which read as a new section
+--- rather than as more of the same one.
+local function field_more(label, value, style, width)
+  local _, cont, room = shape(label, width)
+  local lines = wrap_text(tostring(value), room)
+  local out = {}
+  for index = 1, #lines do
+    out[index] = { { text = cont }, { text = lines[index], style = style } }
+  end
+  return { type = "text", len = #out, text = out }
+end
+
 --- A row whose value is assembled from several styled spans — `+12 / -3`, where
 --- each half carries its own colour. One line: these are numbers the plugin
 --- composed itself, and clipping the tail reads better than wrapping two of them.
 local function spans_field(label, spans, width)
-  local line = { { text = INDENT .. widgets.pad(label, LABEL), style = { fg = theme.muted } } }
-  for _, span in ipairs(clip(spans, value_width(width))) do
+  local prefix, _, room = shape(label, width)
+  local line = { { text = prefix, style = { fg = theme.muted } } }
+  for _, span in ipairs(clip(spans, room)) do
     line[#line + 1] = span
   end
   return { type = "text", len = 1, text = { line } }
@@ -293,12 +335,25 @@ end
 
 --- A section heading, preceded by a rule so the panel reads as sections rather
 --- than one long list of rows.
+---
+--- Truncated, because a heading is not a fixed string: `Agent (…)` and `Usage (…)`
+--- carry a model name, a CLI version, a plan and a host, any of which can be long
+--- — `Agent (claude-sonnet-4-5-20250929 v2.1.4)` overflows a 38-column panel, and
+--- the renderer would then clip it into the border with nothing to say why.
 local function section(rows, title, width)
-  rows[#rows + 1] = widgets.divider(inner_width(width))
+  local inner = inner_width(width)
+  rows[#rows + 1] = widgets.divider(inner)
   rows[#rows + 1] = {
     type = "text",
     len = 1,
-    text = { { { text = INDENT .. title, style = { fg = theme.accent, bold = true } } } },
+    text = {
+      {
+        {
+          text = INDENT .. widgets.truncate(title, math.max(1, inner - #INDENT)),
+          style = { fg = theme.accent, bold = true },
+        },
+      },
+    },
   }
 end
 
@@ -343,23 +398,37 @@ end
 --- Returns the bar's length — 0 for "draw none" — and whether details are kept.
 --- Between them the row is exactly `INDENT + LABEL + PCT + bar + detail` wide,
 --- which is what lets `meter` do no clipping of its own.
-local function group_bar(details, width)
+local function group_bar(labels, details, width)
+  -- Gauges keep an aligned label column even when the text rows give theirs up:
+  -- bars that do not start in the same column cannot be read against each other,
+  -- which is the whole point of them. What compact mode changes is the column's
+  -- WIDTH — the group's own longest label rather than a global ten, which is four
+  -- to seven columns back on every gauge row.
+  local label_width = LABEL
+  if compact(width) then
+    local longest_label = 0
+    for _, label in ipairs(labels) do
+      longest_label = math.max(longest_label, widgets.len(label))
+    end
+    label_width = math.max(1, math.min(LABEL, longest_label + 1))
+  end
+
   local longest = 0
   for _, detail in ipairs(details) do
     if detail ~= "" then
       longest = math.max(longest, GAP + widgets.len(detail))
     end
   end
-  local room = inner_width(width) - #INDENT - LABEL - PCT
+  local room = inner_width(width) - #INDENT - label_width - PCT
   local bars_only = math.max(0, math.min(room, MAX_BAR))
 
   if longest == 0 or room < longest then
-    return bars_only, false
+    return bars_only, false, label_width
   end
   if room - longest < USEFUL_BAR then
-    return 0, true
+    return 0, true, label_width
   end
-  return math.min(room - longest, MAX_BAR), true
+  return math.min(room - longest, MAX_BAR), true, label_width
 end
 
 --- A labelled gauge on one line: `RAM   ██████░░░░  49%  15.2/31.3 GB`.
@@ -369,10 +438,12 @@ end
 --- outcome and not an empty gauge.
 ---
 --- `percent` overrides the number shown, for a value that is not its own ratio.
-local function meter(label, ratio, detail, percent, bar)
+local function meter(label, ratio, detail, percent, bar, label_width)
   ratio = math.max(0, math.min(ratio or 0, 1))
   bar = bar or 0
-  local spans = { { text = INDENT .. widgets.pad(label, LABEL), style = { fg = theme.muted } } }
+  local spans = {
+    { text = INDENT .. widgets.pad(label, label_width or LABEL), style = { fg = theme.muted } },
+  }
   if bar > 0 then
     local filled = math.floor(ratio * bar + 0.5)
     spans[#spans + 1] = { text = string.rep("█", filled), style = { fg = pressure(ratio) } }
@@ -455,7 +526,7 @@ local function push_repos(rows, session, width)
   -- including the primary, so the first is skipped rather than repeated.
   local extra = session.repos or {}
   for index = 2, #extra do
-    rows[#rows + 1] = field("", extra[index], { fg = theme.branch }, width)
+    rows[#rows + 1] = field_more("Repos:", extra[index], { fg = theme.branch }, width)
   end
 
   -- What the diff is taken against, when it is not the branch itself.
@@ -527,7 +598,8 @@ local function push_session_resources(rows, m, width)
   -- column had no room for.
   if cpu > 100 then
     local hint = string.format("  (%.1f cores)", cpu / 100)
-    if widgets.len(percent) + widgets.len(hint) <= value_width(width) then
+    local _, _, room = shape("CPU:", width)
+    if widgets.len(percent) + widgets.len(hint) <= room then
       spans[#spans + 1] = { text = hint, style = { fg = theme.muted } }
     end
   end
@@ -595,9 +667,9 @@ local function push_agent(rows, m, width)
     -- with several gauges do. Budgeting it alone is how it ended up showing a
     -- full-width bar and dropping `142.0k/200.0k`, which is the half that says
     -- how much room is left.
-    local bar, keep = group_bar({ detail or "" }, width)
+    local bar, keep, label_width = group_bar({ "Context" }, { detail or "" }, width)
     rows[#rows + 1] =
-      meter("Context", m.context_used_percent / 100, keep and detail or nil, nil, bar)
+      meter("Context", m.context_used_percent / 100, keep and detail or nil, nil, bar, label_width)
   end
 
   if m.lines_added or m.lines_removed then
@@ -640,7 +712,7 @@ local function push_usage(rows, usage, host, width)
   local windows = usage.windows or {}
   if #windows == 0 then
     if usage.note then
-      rows[#rows + 1] = field("", usage.note, { fg = theme.muted }, width)
+      rows[#rows + 1] = plain_row({ { text = usage.note, style = { fg = theme.muted } } }, width)
     end
     return
   end
@@ -660,13 +732,17 @@ local function push_usage(rows, usage, host, width)
       details[index] = ""
     end
   end
-  local bar, keep = group_bar(details, width)
+  local labels = {}
+  for index = 1, #windows do
+    labels[index] = windows[index].label or "?"
+  end
+  local bar, keep, label_width = group_bar(labels, details, width)
 
   for index = 1, #windows do
     local window = windows[index]
     local percent = window.used_percent or 0
     local detail = keep and details[index] ~= "" and details[index] or nil
-    rows[#rows + 1] = meter(window.label or "?", percent / 100, detail, percent, bar)
+    rows[#rows + 1] = meter(labels[index], percent / 100, detail, percent, bar, label_width)
   end
 end
 
@@ -677,10 +753,10 @@ local function push_system(rows, system, width)
   local pair = format_bytes_pair(used, total)
   -- CPU carries no detail but is sized as though it did, so the two bars below
   -- can be read against each other.
-  local bar, keep = group_bar({ pair }, width)
+  local bar, keep, label_width = group_bar({ "CPU", "RAM" }, { pair }, width)
 
-  rows[#rows + 1] = meter("CPU", (system.cpu_percent or 0) / 100, nil, nil, bar)
-  rows[#rows + 1] = meter("RAM", ratio, keep and pair or nil, nil, bar)
+  rows[#rows + 1] = meter("CPU", (system.cpu_percent or 0) / 100, nil, nil, bar, label_width)
+  rows[#rows + 1] = meter("RAM", ratio, keep and pair or nil, nil, bar, label_width)
 end
 
 --- The automations that would fire, with their schedules.
@@ -729,8 +805,8 @@ local function push_automations(rows, automations, width)
     rows[#rows + 1] = plain_row(spans, width)
   end
   if #live > AUTOMATION_ROWS then
-    rows[#rows + 1] =
-      field("", string.format("+%d more", #live - AUTOMATION_ROWS), { fg = theme.muted }, width)
+    local more = string.format("+%d more", #live - AUTOMATION_ROWS)
+    rows[#rows + 1] = plain_row({ { text = more, style = { fg = theme.muted } } }, width)
   end
 end
 
