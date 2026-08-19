@@ -1,0 +1,14 @@
+# thurbox's v1 info panel, as a plugin. Install it with:
+#
+#     thurbox-cli plugin install git+https://github.com/Thurbeen/thurbox-info-panel
+#
+# `path` below is where the pane lands by default. The `30_` prefix is load
+# order and yours to choose — `--as plugins/NN_info_panel.lua` moves it.
+#
+# It declares no capabilities: everything it draws comes from the snapshot, so
+# there is nothing here to trust and nothing it can reach.
+name = "info-panel"
+description = "Session, git, agent, usage and system readouts — v1's info panel"
+requires_thurbox = ">=2.0"
+
+pane = { source = "info_panel.lua", path = "plugins/30_info_panel.lua" }

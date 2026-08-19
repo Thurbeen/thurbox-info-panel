@@ -1,0 +1,16 @@
+# The preview harness is a host script, so it gets a real Lua standard library
+# (selene ships no `lua54`; `lua53` covers everything the harness uses). The pane
+# itself is checked against the sandbox by the root `selene.toml`.
+std = "lua53"
+
+[lints]
+# Two of selene's own model gaps, silenced rather than coded around:
+#
+# - `incorrect_standard_library_use` fires on `io.stderr:write`, which is correct
+#   Lua — selene's stdlib types `io.stderr` as a value with no methods.
+# - `unused_variable` fires on the `thurbox`/`store`/`command` globals the harness
+#   defines. They are read by the pane it loads, which selene does not follow.
+incorrect_standard_library_use = "allow"
+unused_variable = "allow"
+unscoped_variables = "allow"
+undefined_variable = "deny"

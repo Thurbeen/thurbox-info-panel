@@ -1,0 +1,25 @@
+# Static analysis for the pane, against the plugin VM's real standard library.
+#
+# `std` names `thurbox.yml`, vendored from the thurbox repository: it declares
+# the five stdlib tables the kernel grants plus the globals it injects, and
+# nothing else. So this checks two things at once — that the Lua is sound, and
+# that it stays inside the sandbox. Reaching for `os` or `print` is an undefined
+# variable here rather than a nil index when someone opens the pane.
+std = "thurbox"
+
+# `dev/preview.lua` is excluded because it is a HOST script, not a pane: it runs
+# in a real Lua 5.4 to render the pane outside thurbox, so it legitimately uses
+# `os`, `io`, `arg` and `dofile` — every one of which this std exists to forbid.
+# Linting it against the sandbox would report 21 errors for correct code and, far
+# worse, train the reader to ignore this file's output. It has its own config:
+#
+#     selene dev --config dev/selene.toml
+exclude = ["dev/*.lua"]
+
+[lints]
+# A plugin is one file returning one table; the kernel calls its fields.
+unused_variable = "warn"
+shadowing = "allow"
+almost_swapped = "deny"
+undefined_variable = "deny"
+unscoped_variables = "deny"
