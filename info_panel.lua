@@ -495,15 +495,42 @@ local function push_git(rows, git, width)
 end
 
 --- This session's own process, distinct from the machine's total below.
+---
+--- NEITHER number gets a bar, and that is the difference between this section and
+--- `System` below. A gauge needs a denominator. The machine has one for both of
+--- its rows (100%, total RAM); a process has one for neither — its CPU is a share
+--- of ONE core and passes 100% across several, and nothing published here says
+--- how many cores there are to divide by.
+---
+--- v1 drew a gauge anyway. Filled to a hard 100% it read *maxed out* at 188%, and
+--- read exactly the same at 400% — a bar that stops carrying information above
+--- its own end is worse than the number it was drawn from. Saying `1.9 cores` is
+--- what the bar was throwing away.
+---
+--- The value is not colour-coded by pressure either, for the same missing
+--- denominator: 188% is nothing on a sixteen-core machine, so painting it red
+--- would be a warning the panel cannot justify.
 local function push_session_resources(rows, m, width)
-  if (m.cpu_percent or 0) <= 0 and (m.memory_bytes or 0) <= 0 then
+  local cpu = m.cpu_percent or 0
+  local memory = m.memory_bytes or 0
+  if cpu <= 0 and memory <= 0 then
     return
   end
-  local cpu = m.cpu_percent or 0
-  -- A process spanning cores reports above 100. The bar still ends at one core's
-  -- worth, and the number beside it tells the truth.
-  rows[#rows + 1] = meter("CPU", cpu / 100, nil, width, cpu)
-  rows[#rows + 1] = field("RAM", format_bytes(m.memory_bytes or 0), { fg = theme.text }, width)
+
+  local percent = string.format("%.0f%%", cpu)
+  local spans = { { text = percent, style = { fg = theme.text } } }
+  -- Above one core the percentage alone is a puzzle, so answer it in cores. Added
+  -- only when it fits WHOLE: `clip` would otherwise truncate it to `(1.9 co…`,
+  -- and a half-written parenthetical reads as a bug rather than as an aside the
+  -- column had no room for.
+  if cpu > 100 then
+    local hint = string.format("  (%.1f cores)", cpu / 100)
+    if widgets.len(percent) + widgets.len(hint) <= value_width(width) then
+      spans[#spans + 1] = { text = hint, style = { fg = theme.muted } }
+    end
+  end
+  rows[#rows + 1] = spans_field("CPU:", spans, width)
+  rows[#rows + 1] = field("RAM:", format_bytes(memory), { fg = theme.text }, width)
 end
 
 local function agent_heading(m)

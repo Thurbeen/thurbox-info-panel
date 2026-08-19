@@ -28,8 +28,8 @@ and the kernel's four node kinds for everything on screen.
 │  Base:     main                              │
 │  Changes:  7 files  +214 / -38  3 untracked  │
 │  Sync:     ↑2 ↓1                             │
-│  CPU       ████████████████████████ 188%     │
-│  RAM       812.0 MB                          │
+│  CPU:      188%  (1.9 cores)                 │
+│  RAM:      812.0 MB                          │
 │──────────────────────────────────────────────│
 │  Agent (Opus 5 v2.1.4)                       │
 │  Cost:     $0.8342                           │
@@ -129,7 +129,7 @@ shows a zero it did not measure.
 | Activity / Signal | what the agent said over its own terminal | wrapped, never clipped: this is the text you read when a session wants you |
 | Repos / Base | the session's member directories | one row per repo for a multi-repo session |
 | Changes / Sync | `session.git` | `dirty` with no diff is called out, since untracked-only changes look like nothing |
-| CPU / RAM | `metrics.sessions[id]` | this session's own process; CPU passes 100% across cores |
+| CPU / RAM | `metrics.sessions[id]` | this session's own process, as plain values — see below |
 | Agent | the agent's statusline file | cost, wall and API time, tokens, context window, lines, cache |
 | Usage | the vendor's rate-limit windows | scoped per agent *and* host, so two accounts are never merged |
 | System | `metrics.system` | the whole machine |
@@ -145,6 +145,13 @@ Two properties worth knowing, because both were bugs first:
   renderer would clip an overlong row at the border silently. Values that matter
   (an agent's notification, a path) wrap under a hanging indent; composed number
   rows clip their own tail, which is the least important end.
+- **A bar is only drawn where there is a denominator.** The `System` rows have
+  one (100% of the machine, total RAM) and get gauges. A *process* has one for
+  neither: its CPU is a share of one core and passes 100% across several, and
+  nothing published here says how many cores to divide by. v1 drew a gauge
+  anyway, which read *maxed out* at 188% and read identically at 400% — so the
+  session's own CPU and RAM are plain values here, and above one core the
+  percentage is answered in cores (`188%  (1.9 cores)`).
 
 ## Differences from v1
 
