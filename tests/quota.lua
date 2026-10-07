@@ -82,6 +82,19 @@ assert(
   reason({ state = "done", status = 1, stdout = "", stderr = "\27[31mError:\27[0m boom\n" })
     == "exit 1: Error: boom"
 )
+-- quota-axi's own error wins over runtime noise on stderr, and an escape-only
+-- line is no reason at all.
+assert(reason({
+  state = "done",
+  status = 1,
+  stdout = 'error: "bad token"\n',
+  stderr = "(node:42) ExperimentalWarning: Fetch API\n",
+}) == "exit 1: bad token")
+assert(reason({ state = "done", status = 1, stdout = "x\n", stderr = "\27[0m\n" }) == "exit 1: x")
+assert(
+  reason({ state = "done", status = 1, stdout = "", stderr = "\27]0;t\7a\tb \27[38:5:1mc" })
+    == "exit 1: a b c"
+)
 local long = reason({ state = "done", status = 1, stdout = "", stderr = string.rep("x", 5000) })
 assert(#long <= 128, "reason must be bounded, got " .. #long)
 assert(reason({ state = "done", status = 0, stdout = "{broken" }):find("^unreadable output"))

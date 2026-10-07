@@ -681,7 +681,7 @@ local function push_agent(rows, m, width)
 end
 
 -- All requests originate in actions/events, never in the draw path.
-local parsed_stdout, parsed_key, parsed_at, parsed
+local parsed_stdout, parsed_stderr, parsed_key, parsed_at, parsed
 local QUOTA_TIMEOUT = 30
 
 --- A session on this machine to run quota-axi in: the selected one when it is
@@ -727,14 +727,20 @@ local function quota_reading()
         tostring(answer.status),
         tostring(answer.timed_out),
         tostring(answer.truncated),
-        -- The reason shown for a failure comes from these.
+        -- The reason shown for a failure comes from this, and from stderr below.
         tostring(answer.error),
-        tostring(answer.stderr),
       }, ":")
     or "pending"
-  if parsed_key ~= key or parsed_stdout ~= stdout or parsed_at ~= minute or not parsed then
+  local stderr = answer and answer.stderr
+  if
+    parsed_key ~= key
+    or parsed_stdout ~= stdout
+    or parsed_stderr ~= stderr
+    or parsed_at ~= minute
+    or not parsed
+  then
     parsed = quota.parse(answer, now, QUOTA_TIMEOUT)
-    parsed_key, parsed_stdout, parsed_at = key, stdout, minute
+    parsed_key, parsed_stdout, parsed_stderr, parsed_at = key, stdout, stderr, minute
   end
   return parsed
 end

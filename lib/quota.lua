@@ -185,15 +185,22 @@ end
 -- The first non-blank line of a stream, trimmed, without terminal escapes or
 -- control characters, and short enough to wrap into a few rows.
 local function first_line(s)
-  local line = type(s) == "string" and (s .. "\n"):match("^%s*([^\r\n]-)%s*[\r\n]")
-  if not line or line == "" then
+  if type(s) ~= "string" then
     return nil
   end
-  line = line:gsub("\27%[[%d;?]*%a", ""):gsub("%c", "")
-  if #line > 120 then
-    line = line:sub(1, 117):gsub("[\128-\191]*$", ""):gsub("[\192-\255]$", "") .. "..."
+  s = s:gsub("\27%][^\7\27]*\7", "")
+    :gsub("\27%][^\7\27]*\27\\", "")
+    :gsub("\27%[[0-?]*[ -/]*[@-~]", "")
+  for line in s:gmatch("[^\r\n]+") do
+    line = line:gsub("%c", " "):gsub("%s+", " "):match("^ ?(.-) ?$")
+    if line ~= "" then
+      if #line > 120 then
+        line = line:sub(1, 117):gsub("[\128-\191]*$", ""):gsub("[\192-\255]$", "") .. "..."
+      end
+      return line
+    end
   end
-  return line
+  return nil
 end
 
 --- `timeout` is the one the run was asked with, so a timeout can say how long.
@@ -219,9 +226,12 @@ function quota.parse(answer, now, timeout)
     return unavailable("killed by a signal")
   end
   if answer.status ~= 0 then
-    -- quota-axi prints its own errors on stdout (`error: "..."`), others on stderr.
-    local line = first_line(answer.stderr) or first_line(answer.stdout)
-    line = line and (line:match('^error:%s*"(.*)"$') or line:match("^error:%s*(.+)$") or line)
+    -- quota-axi prints its own error on stdout (`error: "..."`); that beats any
+    -- runtime noise on stderr, which beats the rest of stdout.
+    local own = first_line(("\n" .. (answer.stdout or "")):match("\nerror:([^\r\n]+)"))
+    local line = own and (own:match('^"(.*)"$') or own)
+      or first_line(answer.stderr)
+      or first_line(answer.stdout)
     return unavailable("exit " .. answer.status .. (line and (": " .. line) or ""))
   end
   local data, err = quota.decode(answer.stdout)
