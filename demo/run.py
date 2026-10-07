@@ -59,5 +59,6 @@ with sqlite3.connect(root / "data/thurbox.db") as db:
 try:
     subprocess.run(["thurbox"], cwd=work, check=True)
 finally:
+    subprocess.run(['thurbox-cli','runtime','stop','--json'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     # Only this profile's demo session and multiplexer server are removed.
     subprocess.run(["thurbox-cli", "session", "delete", session_id, "--force"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

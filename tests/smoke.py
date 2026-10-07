@@ -42,8 +42,11 @@ try:
     status = json.loads(cli('extension','status','info-panel-refresh','--json'))
     assert 'info-panel-quota-refresh' in json.dumps(status), status
     cli('extension','uninstall','info-panel-refresh','--json')
+    cli('runtime','stop','--json')
+    assert not json.loads(cli('runtime','status','--json'))['automation_heartbeat'], 'test left its heartbeat keeper running'
     tmux('send-keys','-t','smoke','C-q')
     print('Real TUI smoke passed: trust state, refresh action, scheduler install/uninstall')
 finally:
+    subprocess.run(['thurbox-cli','runtime','stop','--json'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     tmux('kill-server', check=False)
     scratch.cleanup()
