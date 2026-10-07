@@ -78,7 +78,7 @@ local cases = {
       "week",
       "↻ 5d",
       "unavailable",
-      "█",
+      "━",
     },
   },
   {
@@ -312,7 +312,11 @@ for _, case in ipairs(cases) do
           if line:find("^%s+5h session") and line:find("↻ 3h", 1, true) then
             five_hour = five_hour + 1
           end
-          if (line:find("█", 1, true) or line:find("░", 1, true)) and line:find("%d%%") then
+          if
+            (line:find("━", 1, true) or line:find("─", 1, true))
+            and line:find("^%s")
+            and line:find("%d%%")
+          then
             gauges = gauges + 1
           end
         end

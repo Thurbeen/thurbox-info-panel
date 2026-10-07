@@ -70,12 +70,12 @@ fleet's queue-pane FUEL rows:
 ```text
   Quota left · local accounts             3m ago
   claude · personal
-    5h session      ██████████░░  80%  ↻ 3h
-    week            ███████░░░░░  60%  ↻ 1d 5h
-    Opus model week ███████████░  90%  ↻ 5d 21h
+    5h session      ━━━━━━━━━━──  80%  ↻ 3h
+    week            ━━━━━━━─────  60%  ↻ 1d 5h
+    Opus model week ━━━━━━━━━━━─  90%  ↻ 5d 21h
   codex                      binding unavailable
-    session         ████░░░░░░░░  33%  ↻ <1m
-    week            █████░░░░░░░  45%
+    session         ━━━━────────  33%  ↻ <1m
+    week            ━━━━━───────  45%
 ```
 
 Session, week and model-specific windows stay separate, at every width and in

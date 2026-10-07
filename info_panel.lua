@@ -358,6 +358,10 @@ local function section(rows, titles, width, note)
   rows[#rows + 1] = { type = "text", len = 1, text = { line } }
 end
 
+--- Every gauge's two glyphs. Thin rules rather than full blocks, so bars on
+--- consecutive rows stay separate lines instead of merging into one slab.
+local BAR_FULL, BAR_EMPTY = "━", "─"
+
 -- Gauge geometry. At file scope because a GROUP of gauges has to budget with the
 -- same numbers one gauge does — see `group_bar`.
 local PCT = 6
@@ -432,7 +436,7 @@ local function group_bar(labels, details, width)
   return math.min(room - longest, MAX_BAR), true, label_width
 end
 
---- A labelled gauge on one line: `RAM   ██████░░░░  49%  15.2/31.3 GB`.
+--- A labelled gauge on one line: `RAM   ━━━━━━────  49%  15.2/31.3 GB`.
 ---
 --- `bar` and `detail` are decided by `group_bar` rather than here, so every gauge
 --- in a section agrees. A `bar` of 0 draws the row without one, which is a real
@@ -447,8 +451,8 @@ local function meter(label, ratio, detail, percent, bar, label_width)
   }
   if bar > 0 then
     local filled = math.floor(ratio * bar + 0.5)
-    spans[#spans + 1] = { text = string.rep("█", filled), style = { fg = pressure(ratio) } }
-    spans[#spans + 1] = { text = string.rep("░", bar - filled), style = { fg = theme.muted } }
+    spans[#spans + 1] = { text = string.rep(BAR_FULL, filled), style = { fg = pressure(ratio) } }
+    spans[#spans + 1] = { text = string.rep(BAR_EMPTY, bar - filled), style = { fg = theme.muted } }
   end
   spans[#spans + 1] = {
     text = string.format(" %3d%%", math.floor((percent or ratio * 100) + 0.5)),
@@ -804,12 +808,12 @@ local function quota_tone(remaining)
   return theme.ok
 end
 
---- `remaining` as a bar of `cells`, then its number: `██████░░░░  60%`.
+--- `remaining` as a bar of `cells`, then its number: `━━━━━━────  60%`.
 local function gauge_spans(spans, remaining, cells)
   local filled = math.max(0, math.min(cells, math.floor(remaining / 100 * cells + 0.5)))
   local tone = quota_tone(remaining)
-  spans[#spans + 1] = { text = string.rep("█", filled), style = { fg = tone } }
-  spans[#spans + 1] = { text = string.rep("░", cells - filled), style = { fg = theme.muted } }
+  spans[#spans + 1] = { text = string.rep(BAR_FULL, filled), style = { fg = tone } }
+  spans[#spans + 1] = { text = string.rep(BAR_EMPTY, cells - filled), style = { fg = theme.muted } }
   spans[#spans + 1] = {
     text = string.format(" %3d%%", math.floor(remaining + 0.5)),
     style = { fg = tone, bold = true },
