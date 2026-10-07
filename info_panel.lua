@@ -889,8 +889,9 @@ local function push_quota(rows, width)
   -- lines instead: the label and its reset, then the gauge across the column.
   local inner = inner_width(width)
   local label_width = 1
+  -- Only drawn windows count: a stale reading's are never shown.
   for _, row in ipairs(reading.rows) do
-    for _, window in ipairs(row.windows) do
+    for _, window in ipairs(row.status == "fresh" and row.windows or {}) do
       label_width = math.max(label_width, widgets.len(window.label))
     end
   end
@@ -933,7 +934,8 @@ local function push_quota(rows, width)
     for _, window in ipairs(row.status == "fresh" and row.windows or {}) do
       local label_style = window.binding and { fg = theme.accent, bold = true }
         or { fg = theme.muted }
-      local reset = reset_text(window, now)
+      -- No countdown for a number the pane does not show.
+      local reset = window.remaining and reset_text(window, now)
       local gauge = { { text = QUOTA_SUB } }
       if one_line then
         gauge[2] = {
@@ -942,10 +944,13 @@ local function push_quota(rows, width)
         }
       else
         local head = { { text = QUOTA_SUB } }
-        local room = math.max(1, edge - #QUOTA_SUB - (reset and widgets.len(reset) + 1 or 0))
-        if reset and room < 4 then
-          reset, room = nil, math.max(1, edge - #QUOTA_SUB)
+        -- Only a reset longer than any countdown is shortened, to what the
+        -- label leaves: `↻ resets wh…` still says one exists.
+        if reset then
+          local left = edge - #QUOTA_SUB - widgets.len(window.label) - 1
+          reset = widgets.truncate(reset, math.max(QUOTA_RESET - 2, left))
         end
+        local room = math.max(1, edge - #QUOTA_SUB - (reset and widgets.len(reset) + 1 or 0))
         head[2] = { text = widgets.truncate(window.label, room), style = label_style }
         rows[#rows + 1] = with_note(head, reset, { fg = theme.muted }, edge)
       end
@@ -957,8 +962,15 @@ local function push_quota(rows, width)
           style = { fg = theme.warn },
         }
       end
-      if one_line and reset and window.remaining then
-        gauge[#gauge + 1] = { text = "  " .. reset, style = { fg = theme.muted } }
+      if one_line and reset then
+        local used = 0
+        for _, span in ipairs(gauge) do
+          used = used + widgets.len(span.text)
+        end
+        gauge[#gauge + 1] = {
+          text = "  " .. widgets.truncate(reset, math.max(1, inner - used - 2)),
+          style = { fg = theme.muted },
+        }
       end
       rows[#rows + 1] = { type = "text", len = 1, text = { clip(gauge, inner) } }
     end

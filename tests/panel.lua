@@ -205,10 +205,48 @@ for width = 19, 36 do
       end
     end
     contains(s, "week")
+    -- A countdown is never cut to keep more of a label.
+    if width >= 20 then
+      contains(s, "↻ 5d 21h")
+    end
   end)
   if not ok then
     failures = failures + 1
     print("FAIL narrow@" .. width .. ": " .. tostring(err))
+  end
+end
+-- A reset given as long text is shortened, never dropped; an untrusted window
+-- has no countdown at any width; a stale row's hidden windows do not shape the
+-- layout of the rows that are drawn.
+local edges =
+  [[{"schemaVersion":6,"generatedAt":"2026-10-07T12:00:00Z","providers":[{"provider":"codex","state":{"status":"fresh","untrustedWindowIds":["u"]},"windows":[{"id":"week","label":"week","percentRemaining":45,"resetsAt":"2026-10-08T12:00:00Z"},{"id":"s","label":"5h session","percentRemaining":50,"resetText":"resets when your billing cycle renews on the 1st"},{"id":"u","label":"untrusted one","percentRemaining":70,"resetsAt":"2026-10-08T11:00:00Z"}]},{"provider":"agy","state":{"status":"stale"},"windows":[{"id":"g","label":"Gemini 2.5 Pro weekly","percentRemaining":75}]}]}]]
+for _, width in ipairs({ 30, 44, 50, 80 }) do
+  store = { selected = "demo" }
+  thurbox = {
+    taken_at_ms = 1791374400000,
+    sessions = { { id = "demo", name = "demo", agent = "codex", status = "idle", cwd = "/w" } },
+    registry = { settings = {} },
+    theme = { roles = {} },
+    metrics = {},
+    runs = { quota = { state = "done", status = 0, stdout = edges } },
+  }
+  run = function() end
+  local ok, err = pcall(function()
+    local s = screen(dofile("info_panel.lua").render({ width = width, height = 80 }), {}, width)
+    contains(s, "↻ resets")
+    for line in s:gmatch("[^\n]+") do
+      assert(
+        not (line:find("untrusted", 1, true) and line:find("↻", 1, true)),
+        "countdown: " .. line
+      )
+      if width == 44 and line:find("^%s+week") then
+        assert(line:find("↻ 1d", 1, true), "stale labels forced two lines: " .. line)
+      end
+    end
+  end)
+  if not ok then
+    failures = failures + 1
+    print("FAIL edges@" .. width .. ": " .. tostring(err))
   end
 end
 -- A long automation name gives way to its outcome, and a short agent turn
