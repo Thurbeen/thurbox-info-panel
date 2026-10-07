@@ -81,11 +81,15 @@ use the same path. Gemini model windows are shown when quota-axi reports them
 through Antigravity; the panel does not invent a standalone Gemini adapter.
 Providers positively marked `notSetUp` are omitted. Each window uses only its own
 measured `percentRemaining`; missing or untrusted readings show **unavailable**,
-and stale readings show **stale**, without a number or bar. A failed fetch or an
-unsupported schema also shows a word. Cached reports older than five minutes
-relative to the snapshot are marked stale. Raw errors and account emails are not
-displayed. Quotas describe **local accounts**, even when the selected session
-runs on a remote host.
+and stale readings show **stale**, without a number or bar. A failed fetch says
+why after **unavailable**: the run did not finish, timed out, had its output
+truncated, or exited non-zero (with the first line quota-axi wrote to stderr),
+or its output was unreadable or of an unsupported schema. Cached reports older
+than five minutes relative to the snapshot are marked stale. Account emails are
+not displayed. Quotas describe **local accounts**, even when the selected session
+runs on a remote host: Thurbox runs a program in a session, so the panel runs
+quota-axi in the selected session when it is local and otherwise in the first
+local one, and says **needs a local session** when there is none.
 
 Remove the scheduler with `thurbox-cli extension uninstall info-panel-refresh`;
 remove the pane with `thurbox-cli plugin remove info_panel` and remove the layout

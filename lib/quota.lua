@@ -178,21 +178,50 @@ local function epoch(s)
   return days * 86400 + tonumber(h) * 3600 + tonumber(minute) * 60 + tonumber(sec)
 end
 
-function quota.parse(answer, now)
+local function unavailable(reason)
+  return { status = "unavailable", reason = reason, rows = {} }
+end
+
+-- The first non-blank line of a stream, trimmed.
+local function first_line(s)
+  return type(s) == "string" and s:match("^%s*([^\r\n]-)%s*[\r\n]") or nil
+end
+
+--- `timeout` is the one the run was asked with, so a timeout can say how long.
+function quota.parse(answer, now, timeout)
   if not answer or answer.state == "pending" then
     return { status = "loading", rows = {} }
   end
-  if answer.state ~= "done" or answer.status ~= 0 or answer.timed_out or answer.truncated then
-    local missing = answer.status == 127 or answer.status == 9009
-    return { status = missing and "missing" or "unavailable", rows = {} }
+  if answer.state ~= "done" then
+    -- Thurbox's own reason; it names an empty session id with a double space.
+    local why = type(answer.error) == "string" and answer.error:gsub("%s+", " ") or nil
+    return unavailable(why or "not finished")
   end
-  local data = quota.decode(answer.stdout)
-  if
-    type(data) ~= "table"
-    or (data.schemaVersion ~= 5 and data.schemaVersion ~= 6)
-    or type(data.providers) ~= "table"
-  then
-    return { status = "unavailable", rows = {} }
+  if answer.status == 127 or answer.status == 9009 then
+    return { status = "missing", rows = {} }
+  end
+  if answer.timed_out then
+    return unavailable(timeout and ("timed out after " .. timeout .. "s") or "timed out")
+  end
+  if answer.truncated then
+    return unavailable("output truncated")
+  end
+  if answer.status == nil then
+    return unavailable("killed by a signal")
+  end
+  if answer.status ~= 0 then
+    local line = first_line((answer.stderr or "") .. "\n")
+    return unavailable("exit " .. answer.status .. ((line and line ~= "") and (": " .. line) or ""))
+  end
+  local data, err = quota.decode(answer.stdout)
+  if type(data) ~= "table" then
+    return unavailable("unreadable output: " .. tostring(err))
+  end
+  if data.schemaVersion ~= 5 and data.schemaVersion ~= 6 then
+    return unavailable("unsupported schemaVersion " .. tostring(data.schemaVersion))
+  end
+  if type(data.providers) ~= "table" then
+    return unavailable("no providers in output")
   end
   local at = epoch(data.generatedAt)
   local aged = not at or (now and now - at > 300)

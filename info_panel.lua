@@ -682,9 +682,30 @@ end
 
 -- All requests originate in actions/events, never in the draw path.
 local parsed_stdout, parsed_key, parsed_at, parsed
+local QUOTA_TIMEOUT = 30
+
+--- A session on this machine to run quota-axi in: the selected one when it is
+--- local, else the first local one. Thurbox fails a `run` that names no session,
+--- and a remote session would read that host's accounts instead of these.
+local function local_session()
+  local sessions = (thurbox and thurbox.sessions) or {}
+  for _, session in ipairs(sessions) do
+    if session.id == store.selected and not session.host and session.cwd then
+      return session
+    end
+  end
+  for _, session in ipairs(sessions) do
+    if not session.host and session.cwd then
+      return session
+    end
+  end
+  return nil
+end
+
 local function refresh_quota()
-  if run then
-    run("quota", "quota-axi --json", { ttl = 60, timeout = 30 })
+  local session = local_session()
+  if run and session then
+    run("quota", "quota-axi --json", { session = session.id, ttl = 60, timeout = QUOTA_TIMEOUT })
   end
 end
 
@@ -694,6 +715,9 @@ local function quota_reading()
   end
   local now = math.floor((thurbox.taken_at_ms or 0) / 1000)
   local answer = (thurbox.runs or {}).quota
+  if not answer and not local_session() then
+    return { status = "unavailable", reason = "needs a local session", rows = {} }
+  end
   local stdout = answer and answer.stdout
   -- Decode once per answer, plus a minute tick for age validation.
   local minute = math.floor(now / 60)
@@ -706,7 +730,7 @@ local function quota_reading()
       }, ":")
     or "pending"
   if parsed_key ~= key or parsed_stdout ~= stdout or parsed_at ~= minute or not parsed then
-    parsed = quota.parse(answer, now)
+    parsed = quota.parse(answer, now, QUOTA_TIMEOUT)
     parsed_key, parsed_stdout, parsed_at = key, stdout, minute
   end
   return parsed
@@ -730,10 +754,11 @@ local function push_quota(rows, width)
       missing = "npm install -g quota-axi",
       unavailable = "unavailable",
     }
-    rows[#rows + 1] = plain_row(
-      { { text = messages[reading.status] or "unavailable", style = { fg = theme.muted } } },
-      width
-    )
+    local message = messages[reading.status] or "unavailable"
+    if reading.reason then
+      message = message .. " · " .. reading.reason
+    end
+    rows[#rows + 1] = quota_field(message, { fg = theme.muted }, width)
     return
   end
   if #reading.rows == 0 then
@@ -966,7 +991,8 @@ return {
   name = NAME,
   capabilities = { "run" },
   pure = true,
-  events = { "interface.reloaded" },
+  -- A session can appear after the reload, and the run needs one.
+  events = { "interface.reloaded", "session.created" },
   on_event = function()
     refresh_quota()
   end,

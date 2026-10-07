@@ -53,4 +53,27 @@ assert(
   q.parse({ state = "done", status = 1, stderr = "credential file not found" }, now).status
     == "unavailable"
 )
+-- Every way a run can fail says why, rather than a bare "unavailable".
+local function reason(answer)
+  local r = q.parse(answer, now, 30)
+  assert(r.status == "unavailable", "want unavailable, got " .. tostring(r.status))
+  return r.reason
+end
+assert(
+  reason({ state = "failed", error = "no session  to run it in" }) == "no session to run it in"
+)
+assert(reason({ state = "done", stdout = "", timed_out = true }) == "timed out after 30s")
+assert(reason({ state = "done", status = 0, stdout = "{", truncated = true }) == "output truncated")
+assert(reason({ state = "done", stdout = "" }) == "killed by a signal")
+assert(
+  reason({ state = "done", status = 2, stdout = "", stderr = "\n  bad flag --json\nusage" })
+    == "exit 2: bad flag --json"
+)
+assert(reason({ state = "done", status = 3, stdout = "", stderr = "" }) == "exit 3")
+assert(reason({ state = "done", status = 0, stdout = "{broken" }):find("^unreadable output"))
+assert(
+  reason({ state = "done", status = 0, stdout = [[{"schemaVersion":4,"providers":[]}]] })
+    == "unsupported schemaVersion 4"
+)
+assert(q.parse({ state = "done", status = 127, stdout = "" }, now).status == "missing")
 print("Quota contract tests passed")
