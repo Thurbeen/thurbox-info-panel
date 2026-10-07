@@ -23,6 +23,7 @@
 -- It declares no `input` and mutates nothing: like v1's panel it is a readout,
 -- so it has no scoped keyboard beyond the one key that brings it forward.
 
+local quota = require("thurbox-info-panel.lib.quota")
 local panels = require("lib.panels")
 local theme = require("lib.theme")
 local widgets = require("lib.widgets")
@@ -155,25 +156,6 @@ local function format_tokens(count)
   return string.format("%d", count)
 end
 
---- A rate-limit window's reset, coarse on purpose: the exact second is noise
---- when the window is days wide.
-local function format_countdown(secs)
-  if secs <= 0 then
-    return "now"
-  end
-  local days = math.floor(secs / 86400)
-  local hours = math.floor((secs % 86400) / 3600)
-  local mins = math.floor((secs % 3600) / 60)
-  if days > 0 then
-    return string.format("%dd %dh", days, hours)
-  elseif hours > 0 then
-    return string.format("%dh %dm", hours, mins)
-  elseif mins > 0 then
-    return string.format("%dm", mins)
-  end
-  return "<1m"
-end
-
 -- ── row shapes ──────────────────────────────────────────────────────────────
 
 --- Split a word too long to fit into `width`-character chunks.
@@ -182,15 +164,22 @@ end
 --- a multi-byte glyph produces a broken one, and the values reaching here are
 --- exactly the ones with such glyphs in them.
 local function chunks(word, width)
-  local out = {}
-  local total = widgets.len(word)
-  local first = 1
-  while first <= total do
-    local last = math.min(first + width - 1, total)
-    local from = utf8.offset(word, first) or 1
-    local to = (utf8.offset(word, last + 1) or (#word + 1)) - 1
-    out[#out + 1] = string.sub(word, from, to)
-    first = last + 1
+  local out, parts, used = {}, {}, 0
+  for _, code in utf8.codes(word) do
+    local char = utf8.char(code)
+    local columns = widgets.len(char)
+    if used + columns > width and #parts > 0 then
+      out[#out + 1] = table.concat(parts)
+      parts, used = {}, 0
+    end
+    if columns > width then
+      -- A two-column glyph cannot occupy a one-column remainder.
+      char, columns = "…", 1
+    end
+    parts[#parts + 1], used = char, used + columns
+  end
+  if #parts > 0 then
+    out[#out + 1] = table.concat(parts)
   end
   return out
 end
@@ -691,58 +680,91 @@ local function push_agent(rows, m, width)
   end
 end
 
---- The heading names the plan and, for a remote session, the host whose
---- credentials the numbers came from — so usage from two accounts is never
---- mistaken for one.
-local function usage_heading(usage, host)
-  local plan = usage.plan
-  if plan and host then
-    return string.format("Usage (%s · %s)", plan, host)
-  elseif plan then
-    return string.format("Usage (%s)", plan)
-  elseif host then
-    return string.format("Usage (%s)", host)
+-- All requests originate in actions/events, never in the draw path.
+local parsed_stdout, parsed_key, parsed_at, parsed
+local function refresh_quota()
+  if run then
+    run("quota", "quota-axi --json", { ttl = 60, timeout = 30 })
   end
-  return "Usage"
 end
 
-local function push_usage(rows, usage, host, width)
-  section(rows, usage_heading(usage, host), width)
+local function quota_reading()
+  if not run then
+    return { status = "untrusted", rows = {} }
+  end
+  local now = math.floor((thurbox.taken_at_ms or 0) / 1000)
+  local answer = (thurbox.runs or {}).quota
+  local stdout = answer and answer.stdout
+  -- Decode once per answer, plus a minute tick for age validation.
+  local minute = math.floor(now / 60)
+  local key = answer
+      and table.concat({
+        answer.state or "",
+        tostring(answer.status),
+        tostring(answer.timed_out),
+        tostring(answer.truncated),
+      }, ":")
+    or "pending"
+  if parsed_key ~= key or parsed_stdout ~= stdout or parsed_at ~= minute or not parsed then
+    parsed = quota.parse(answer, now)
+    parsed_key, parsed_stdout, parsed_at = key, stdout, minute
+  end
+  return parsed
+end
 
-  local windows = usage.windows or {}
-  if #windows == 0 then
-    if usage.note then
-      rows[#rows + 1] = plain_row({ { text = usage.note, style = { fg = theme.muted } } }, width)
-    end
+local function quota_field(value, style, width)
+  local lines = {}
+  for _, line in ipairs(wrap_text(value, math.max(1, inner_width(width) - #INDENT))) do
+    lines[#lines + 1] = { { text = INDENT .. line, style = style } }
+  end
+  return { type = "text", len = #lines, text = lines }
+end
+
+local function push_quota(rows, width)
+  section(rows, "Quota · local accounts", width)
+  local reading = quota_reading()
+  if reading.status ~= "ready" then
+    local messages = {
+      untrusted = "trust run in Interface settings",
+      loading = "loading",
+      missing = "npm install -g quota-axi",
+      unavailable = "unavailable",
+    }
+    rows[#rows + 1] = plain_row(
+      { { text = messages[reading.status] or "unavailable", style = { fg = theme.muted } } },
+      width
+    )
     return
   end
-
-  -- `resets_at` is an absolute epoch second and the sandbox has no clock, so the
-  -- countdown is measured from the snapshot's own instant.
-  local now = math.floor(widgets.now_ms() / 1000)
-  local details = {}
-  for index = 1, #windows do
-    local window = windows[index]
-    if window.resets_at and now > 0 then
-      details[index] = format_countdown(window.resets_at - now)
-    else
-      -- An empty string rather than a hole: `ipairs` stops at the first `nil`,
-      -- so a window with no reset time would end the budget early and size the
-      -- group off the windows before it.
-      details[index] = ""
+  if #reading.rows == 0 then
+    rows[#rows + 1] = field("", "no configured providers", { fg = theme.muted }, width)
+  end
+  for _, row in ipairs(reading.rows) do
+    local title = row.provider .. " · " .. row.account
+    if row.scope ~= "all_models" then
+      title = title .. " · " .. row.scope
     end
-  end
-  local labels = {}
-  for index = 1, #windows do
-    labels[index] = windows[index].label or "?"
-  end
-  local bar, keep, label_width = group_bar(labels, details, width)
-
-  for index = 1, #windows do
-    local window = windows[index]
-    local percent = window.used_percent or 0
-    local detail = keep and details[index] ~= "" and details[index] or nil
-    rows[#rows + 1] = meter(labels[index], percent / 100, detail, percent, bar, label_width)
+    rows[#rows + 1] = quota_field(title, { fg = theme.accent }, width)
+    if row.remaining then
+      local room = math.max(1, inner_width(width) - #INDENT - 10)
+      local bar = math.min(24, room)
+      local filled = math.floor(row.remaining * bar / 100 + 0.5)
+      rows[#rows + 1] = plain_row({
+        { text = string.rep("█", filled), style = { fg = pressure(1 - row.remaining / 100) } },
+        { text = string.rep("░", bar - filled), style = { fg = theme.muted } },
+        {
+          text = string.format(" %d%% left", math.floor(row.remaining + 0.5)),
+          style = { fg = theme.text },
+        },
+      }, width)
+      for _, binding in ipairs(row.bindings) do
+        rows[#rows + 1] = quota_field("binding: " .. binding.label, { fg = theme.muted }, width)
+        rows[#rows + 1] =
+          quota_field("reset: " .. (binding.reset or "unavailable"), { fg = theme.muted }, width)
+      end
+    else
+      rows[#rows + 1] = quota_field(row.status, { fg = theme.warn }, width)
+    end
   end
 end
 
@@ -884,9 +906,6 @@ local function body(width)
     if own and own.agent then
       push_agent(rows, own.agent, width)
     end
-    if own and own.usage then
-      push_usage(rows, own.usage, session.host, width)
-    end
   else
     -- v1 returned before painting its block when there was no session. An empty
     -- bordered box is worse than either that or this: the panel says what it is
@@ -894,6 +913,8 @@ local function body(width)
     rows[#rows + 1] =
       plain_row({ { text = "no session selected", style = { fg = theme.muted } } }, width)
   end
+
+  push_quota(rows, width)
 
   -- The kernel publishes a ZEROED machine table before the first sample rather
   -- than omitting it, so `system ~= nil` is not the question. A total memory of
@@ -915,6 +936,13 @@ end
 
 return {
   name = NAME,
+  capabilities = { "run" },
+  pure = true,
+  events = { "interface.reloaded" },
+  on_event = function()
+    refresh_quota()
+  end,
+  commands = { { action = "info.quota.refresh", desc = "refresh local account quotas" } },
 
   -- Its own COLUMN, and `layout.lua` places it — which is why installing this
   -- needs the three lines README.md gives you. That edit is not an oversight to
@@ -963,7 +991,11 @@ return {
   end,
 
   on_action = function(action)
-    if action == "info.toggle" then
+    if action == "info.quota.refresh" then
+      refresh_quota()
+      return true
+    elseif action == "info.toggle" then
+      refresh_quota()
       -- Visibility, not focus, and it belongs in `lib.panels` rather than in this
       -- file because `layout.lua` has to read it: the arrangement decides whether
       -- to carve the column BEFORE this plugin runs, so the answer cannot live

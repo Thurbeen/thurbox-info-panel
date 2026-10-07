@@ -1,0 +1,47 @@
+name: Check
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install gate tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 tmux python3
+          mkdir -p "$RUNNER_TEMP/tools"
+          fetch() {
+            curl -fsSL "$1" -o "$RUNNER_TEMP/tools/$2"
+            echo "$3  $RUNNER_TEMP/tools/$2" | sha256sum -c -
+          }
+          fetch https://github.com/Thurbeen/thurbox/releases/download/v2.51.7/thurbox-v2.51.7-x86_64-unknown-linux-gnu.tar.gz thurbox.tar.gz f795a1c2009fed55b282fb340a91e15fb9b989bf91ff4fa20838b08fcc6588bb
+          tar -xzf "$RUNNER_TEMP/tools/thurbox.tar.gz" -C "$RUNNER_TEMP/tools"
+          fetch https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip stylua.zip bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab
+          unzip -q "$RUNNER_TEMP/tools/stylua.zip" -d "$RUNNER_TEMP/tools"
+          fetch https://github.com/Kampfkarren/selene/releases/download/0.32.0/selene-0.32.0-linux.zip selene.zip d3773393578580074386e69337d35b7acddfbaa9fc38964c07fa3e28436ade9b
+          unzip -q "$RUNNER_TEMP/tools/selene.zip" -d "$RUNNER_TEMP/tools"
+          fetch https://github.com/rvben/rumdl/releases/download/v0.2.78/rumdl-v0.2.78-x86_64-unknown-linux-gnu.tar.gz rumdl.tar.gz 5597ecab62c6cd50e63f85451fe4e763abc58195a3e7eff9186b6dfae890ca24
+          tar -xzf "$RUNNER_TEMP/tools/rumdl.tar.gz" -C "$RUNNER_TEMP/tools"
+          chmod +x "$RUNNER_TEMP/tools/"{selene,stylua,rumdl}
+          echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
+      - name: Gate
+        run: bash scripts/check.sh
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install native Thurbox
+        shell: pwsh
+        run: |
+          $archive = "$env:RUNNER_TEMP/thurbox.zip"
+          Invoke-WebRequest https://github.com/Thurbeen/thurbox/releases/download/v2.51.7/thurbox-v2.51.7-x86_64-pc-windows-msvc.zip -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne 'df0a9fce26a1a5fb06bc46d6c5017d6f1a675c6a780907efd5dafb4aa333f94c') { throw 'checksum mismatch' }
+          Expand-Archive $archive "$env:RUNNER_TEMP/thurbox"
+          "$env:RUNNER_TEMP/thurbox" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Check native plugin loading and placement
+        run: |
+          python scripts/interface.py .cache/check
+          node --check extension/refresh.mjs

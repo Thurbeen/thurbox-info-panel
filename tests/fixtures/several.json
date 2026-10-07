@@ -1,0 +1,334 @@
+{
+  "schemaVersion": 6,
+  "generatedAt": "2026-10-07T12:00:00Z",
+  "providers": [
+    {
+      "provider": "claude",
+      "accountKey": "personal",
+      "accountKeys": [
+        "personal"
+      ],
+      "windows": [
+        {
+          "id": "session",
+          "label": "session",
+          "kind": "session",
+          "percentRemaining": 80,
+          "resetsAt": "2026-10-07T15:00:00Z"
+        },
+        {
+          "id": "weekly",
+          "label": "week",
+          "kind": "weekly",
+          "percentRemaining": 60,
+          "resetsAt": "2026-10-12T12:00:00Z"
+        }
+      ],
+      "state": {
+        "status": "fresh",
+        "stale": false
+      },
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 60,
+            "boundedBy": [
+              "session",
+              "weekly"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "provider": "claude",
+      "accountKey": "work",
+      "accountKeys": [
+        "work"
+      ],
+      "windows": [
+        {
+          "id": "session",
+          "label": "session",
+          "kind": "session",
+          "percentRemaining": 80,
+          "resetsAt": "2026-10-07T15:00:00Z"
+        },
+        {
+          "id": "weekly",
+          "label": "week",
+          "kind": "weekly",
+          "percentRemaining": 25,
+          "resetsAt": "2026-10-12T12:00:00Z"
+        }
+      ],
+      "state": {
+        "status": "fresh",
+        "stale": false
+      },
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 25,
+            "boundedBy": [
+              "session",
+              "weekly"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "provider": "codex",
+      "accountKey": "default",
+      "accountKeys": [
+        "default"
+      ],
+      "windows": [
+        {
+          "id": "session",
+          "label": "session",
+          "kind": "session",
+          "percentRemaining": 80,
+          "resetsAt": "2026-10-07T15:00:00Z"
+        },
+        {
+          "id": "weekly",
+          "label": "week",
+          "kind": "weekly",
+          "percentRemaining": 45,
+          "resetsAt": "2026-10-12T12:00:00Z"
+        }
+      ],
+      "state": {
+        "status": "fresh",
+        "stale": false
+      },
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 45,
+            "boundedBy": [
+              "session",
+              "weekly"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "provider": "cursor",
+      "accountKey": "default",
+      "accountKeys": [
+        "default"
+      ],
+      "windows": [
+        {
+          "id": "session",
+          "label": "session",
+          "kind": "session",
+          "percentRemaining": 80,
+          "resetsAt": "2026-10-07T15:00:00Z"
+        },
+        {
+          "id": "weekly",
+          "label": "week",
+          "kind": "weekly",
+          "percentRemaining": 70,
+          "resetsAt": "2026-10-12T12:00:00Z"
+        }
+      ],
+      "state": {
+        "status": "fresh",
+        "stale": false
+      },
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 70,
+            "boundedBy": [
+              "session",
+              "weekly"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "provider": "copilot",
+      "accountKey": "default",
+      "accountKeys": [
+        "default"
+      ],
+      "windows": [
+        {
+          "id": "session",
+          "label": "session",
+          "kind": "session",
+          "percentRemaining": 80,
+          "resetsAt": "2026-10-07T15:00:00Z"
+        },
+        {
+          "id": "weekly",
+          "label": "week",
+          "kind": "weekly",
+          "percentRemaining": 35,
+          "resetsAt": "2026-10-12T12:00:00Z"
+        }
+      ],
+      "state": {
+        "status": "fresh",
+        "stale": false
+      },
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 35,
+            "boundedBy": [
+              "session",
+              "weekly"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "provider": "zai",
+      "accountKey": "default",
+      "accountKeys": [
+        "default"
+      ],
+      "windows": [
+        {
+          "id": "session",
+          "label": "session",
+          "kind": "session",
+          "percentRemaining": 80,
+          "resetsAt": "2026-10-07T15:00:00Z"
+        },
+        {
+          "id": "weekly",
+          "label": "week",
+          "kind": "weekly",
+          "percentRemaining": 55,
+          "resetsAt": "2026-10-12T12:00:00Z"
+        }
+      ],
+      "state": {
+        "status": "fresh",
+        "stale": false
+      },
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 55,
+            "boundedBy": [
+              "session",
+              "weekly"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "provider": "agy",
+      "accountKey": "default",
+      "accountKeys": [
+        "default"
+      ],
+      "windows": [
+        {
+          "id": "session",
+          "label": "session",
+          "kind": "session",
+          "percentRemaining": 80,
+          "resetsAt": "2026-10-07T15:00:00Z"
+        },
+        {
+          "id": "weekly",
+          "label": "week",
+          "kind": "weekly",
+          "percentRemaining": 75,
+          "resetsAt": "2026-10-12T12:00:00Z"
+        }
+      ],
+      "state": {
+        "status": "fresh",
+        "stale": false
+      },
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 75,
+            "boundedBy": [
+              "session",
+              "weekly"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "provider": "grok",
+      "accountKeys": [
+        "default"
+      ],
+      "windows": [],
+      "state": {
+        "status": "unavailable",
+        "stale": false
+      }
+    },
+    {
+      "provider": "kimi",
+      "notSetUp": true,
+      "windows": [],
+      "state": {
+        "status": "unavailable",
+        "stale": false
+      }
+    }
+  ]
+}
