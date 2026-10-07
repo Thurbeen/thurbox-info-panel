@@ -91,10 +91,10 @@ reading's age appears beside the heading only once a refresh is overdue (over
 90 seconds old).
 
 Below 36 columns the label takes its own line, with the binding window's name
-beside it when it fits, and the gauge goes underneath; the window lines are kept
-only when they add something: a tie, a model-scope binding, or no binding at all.
-Without authoritative binding metadata every window stays visible and the
-subscription says **binding unavailable**. Gauge colours use the active theme's
+beside it when it fits, and the gauge goes underneath. Every window line is kept
+at every width, so Claude's 5h and week windows are always visible. Without
+authoritative binding metadata the subscription says **binding unavailable** in
+place of its gauge. Gauge colours use the active theme's
 good, warning and danger roles: remaining above 40%, above 15% through 40%, and
 15% or less; the bar ticks the 15% reserve with `┃`.
 
@@ -171,8 +171,8 @@ and run `thurbox-cli plugin check`. Open Thurbox, press F2 and grant run in the
 Interface tab. With quota-axi on PATH, use the refresh palette command: each
 configured account should show one gauge with its reset countdown and every
 window under it at 44 columns, with binding labels highlighted, or an honest
-status word. At 28 columns, the gauge moves under the label and only binding
-windows should remain when the binding metadata is available. Install
+status word. At 28 columns, the gauge moves under the label and every window
+should still be listed. Install
 the companion extension and leave the interface idle
 across a minute boundary; its quota answer should refresh without switching
 sessions. Hide Info with F2 and show it again. Resize the column to 28 and 44

@@ -237,10 +237,18 @@ for _, case in ipairs(cases) do
           contains(s, "80%")
           contains(s, "90%")
           contains(s, "↻ 5d 21h")
-        else
-          assert(not s:find("Opus week", 1, true), "compact must collapse nonbinding windows")
-          assert(not s:find("↻ 3h", 1, true), "compact must keep binding resets only")
         end
+        -- Every window of every subscription at every width: Claude's 5h and
+        -- week windows each with a number and a reset, model windows too.
+        local five_hour = 0
+        for line in s:gmatch("[^\n]+") do
+          if line:find("^%s+5h") and line:find("80%", 1, true) and line:find("↻ 3h", 1, true) then
+            five_hour = five_hour + 1
+          end
+        end
+        assert(five_hour == 3, "a 5h row per claude account and codex, got " .. five_hour)
+        contains(s, "Opus")
+        contains(s, "↻ 5d 21h")
         -- Every number ends in one column, gauge rows and window rows alike.
         local column
         for line in s:gmatch("[^\n]+") do

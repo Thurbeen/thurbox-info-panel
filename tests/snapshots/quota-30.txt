@@ -1,13 +1,18 @@
   Quota left          3m ago
   claude · personal     week
-    ┃████░░░  60%  ↻ 1d 5h
+   █┃████░░░░  60% ↻ 1d 5h
+   5h session  80% ↻ 3h
+   week        60% ↻ 1d 5h
+   Opus mode…  90% ↻ 5d 21h
   claude · work   5h session
-    ┃░░░░░░░  12%  ↻ 45m
+   █┃░░░░░░░░  12% ↻ 45m
+   5h session  12% ↻ 45m
+   week       100% ↻ 10d
   codex
-    binding unavailable
-    session   33%  ↻ <1m
-    week      45%
+   binding unavailable
+   session     33% ↻ <1m
+   week        45%
   agy
-    stale
+   stale
   grok
-    unavailable
+   unavailable

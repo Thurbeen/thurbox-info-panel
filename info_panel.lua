@@ -846,10 +846,10 @@ local function headline(row)
 end
 
 --- The row's reset as `↻ 1d 5h`, or nothing when the window gave no instant.
-local function reset_spans(spans, window, now)
+local function reset_spans(spans, window, now, gap)
   if window.resets_at and now > 0 then
     spans[#spans + 1] = {
-      text = "  " .. RESET_GLYPH .. " " .. format.duration(window.resets_at - now),
+      text = gap .. RESET_GLYPH .. " " .. format.duration(window.resets_at - now),
       style = { fg = theme.muted },
     }
   end
@@ -896,13 +896,18 @@ local function push_quota(rows, width)
   label_width = math.min(label_width, QUOTA_LABEL_MAX)
   local beside = inner - #INDENT - label_width - 1 - 1 - QUOTA_NUMBER - QUOTA_RESET
   local one_line = beside >= QUOTA_BAR_MIN
-  local gauge_at = one_line and (#INDENT + label_width + 1) or (#INDENT * 2)
-  local show_reset = inner - gauge_at >= QUOTA_NUMBER + QUOTA_RESET
-  local bar = inner - gauge_at - 1 - QUOTA_NUMBER - (show_reset and QUOTA_RESET or 0)
+  -- Narrow, every column counts toward a window's label: rows under the name
+  -- sit one column in rather than two, and the reset is one column closer.
+  local sub = one_line and INDENT .. INDENT or INDENT .. " "
+  local gap = one_line and "  " or " "
+  local reset_width = QUOTA_RESET - 2 + #gap
+  local gauge_at = one_line and (#INDENT + label_width + 1) or #sub
+  local show_reset = inner - gauge_at >= QUOTA_NUMBER + reset_width
+  local bar = inner - gauge_at - 1 - QUOTA_NUMBER - (show_reset and reset_width or 0)
   bar = bar >= QUOTA_BAR_MIN and math.min(bar, QUOTA_BAR_MAX) or 0
   -- Where every number ends, and what the gauge slot holds in its place.
   local number_end = gauge_at + (bar > 0 and bar + 1 or 0) + QUOTA_NUMBER
-  local slot = number_end - gauge_at + (show_reset and QUOTA_RESET or 0)
+  local slot = number_end - gauge_at + (show_reset and reset_width or 0)
 
   for _, row in ipairs(reading.rows) do
     local label = account_label(row)
@@ -927,7 +932,7 @@ local function push_quota(rows, width)
         }
       end
       rows[#rows + 1] = { type = "text", len = 1, text = { spans } }
-      spans = { { text = INDENT .. INDENT } }
+      spans = { { text = sub } }
     end
 
     local top = headline(row)
@@ -951,7 +956,7 @@ local function push_quota(rows, width)
         style = { fg = quota_tone(top.remaining), bold = true },
       }
       if show_reset then
-        reset_spans(spans, top, now)
+        reset_spans(spans, top, now, gap)
       end
     else
       spans[#spans + 1] = {
@@ -961,21 +966,17 @@ local function push_quota(rows, width)
     end
     rows[#rows + 1] = { type = "text", len = 1, text = { spans } }
 
-    -- Every window under a fresh reading, in the reading's order, the binding
-    -- ones in the accent. Narrow, the gauge already says the one that binds,
-    -- so only a tie, a model-scope binding, or no binding at all lists them.
-    local windows = {}
-    if row.status == "fresh" and (one_line or #row.bindings ~= 1) then
-      windows = (one_line or #row.bindings == 0) and row.windows or row.bindings
-    end
-    for _, window in ipairs(windows) do
+    -- Every window under a fresh reading, at every width and in the reading's
+    -- order, the binding ones in the accent: a 5h window that does not bind
+    -- today is the one that binds tomorrow.
+    for _, window in ipairs(row.status == "fresh" and row.windows or {}) do
       -- A window with no number says why in the number's place, spilling into
       -- the reset column rather than into its label.
       local number = window.remaining and quota_number(window.remaining)
         or widgets.truncate(window.status, slot - (number_end - gauge_at - QUOTA_NUMBER))
-      local room = math.max(1, number_end - QUOTA_NUMBER - #INDENT * 2 - 1)
+      local room = math.max(1, number_end - QUOTA_NUMBER - #sub - 1)
       local detail = {
-        { text = INDENT .. INDENT },
+        { text = sub },
         {
           text = widgets.pad(widgets.truncate(window.label, room), room) .. " ",
           style = window.binding and { fg = theme.accent, bold = true } or { fg = theme.muted },
@@ -987,7 +988,7 @@ local function push_quota(rows, width)
         },
       }
       if show_reset and window.remaining then
-        reset_spans(detail, window, now)
+        reset_spans(detail, window, now, gap)
       end
       rows[#rows + 1] = { type = "text", len = 1, text = { clip(detail, inner) } }
     end
