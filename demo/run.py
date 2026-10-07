@@ -21,6 +21,9 @@ for name, subdir in {
 socket_root = Path.home() / ".cache/info-panel-demo-sockets"
 socket_root.mkdir(parents=True, exist_ok=True)
 os.environ["TMUX_TMPDIR"] = str(socket_root)
+# A throwaway HOME, so agent hook wiring never reaches the real one.
+(root / "home").mkdir(exist_ok=True)
+os.environ["HOME"] = str(root / "home")
 for name in ("THURBOX_SESSION", "THURBOX_SESSION_ID", "THURBOX_SOCKET", "THURBOX_SOCKET_FOR"):
     os.environ.pop(name, None)
 # Rebuild the scratch UI; source files and the live interface stay untouched.
@@ -52,8 +55,9 @@ source = pane.read_text()
 source = 'local run = function() end -- sandbox mock worker\n' + source
 source = source.replace('local answer = (thurbox.runs or {}).quota', 'local answer = {state="done", status=0, stdout=[=[' + answer + ']=]}')
 pane.write_text(source)
-# Use a named palette from the release, not custom colours.
-(root / "config/settings.toml").unlink(missing_ok=True)
+# Use a named palette from the release, not custom colours, and keep the
+# recorded binary from updating itself or badging a newer release mid-take.
+(root / "config/settings.toml").write_text("[features]\nversion_check = false\nauto_update = false\nnotifications = false\n")
 work = root / "project"
 work.mkdir(exist_ok=True)
 if not (work / ".git").exists():
@@ -66,7 +70,8 @@ created = subprocess.run(["thurbox-cli", "session", "create", "--json", "--name"
 session_id = json.loads(created.stdout)["id"]
 with sqlite3.connect(root / "data/thurbox.db") as db:
     db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES ('v2_interface_acknowledged','1')")
-    db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES ('active_theme',?)", ('catppuccin-latte' if "light" in sys.argv else 'catppuccin-mocha',))
+    # The theme modal persists its choice here; pick the built-in Doom palette.
+    db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES ('active_theme','doom')")
 try:
     subprocess.run(["thurbox"], cwd=work, check=True)
 finally:

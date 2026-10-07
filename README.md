@@ -4,10 +4,12 @@ Session, git, agent, account quota and system readouts beside the terminal in
 [Thurbox](https://github.com/Thurbeen/thurbox). Linux and native Windows use the
 same Lua pane and platform shell worker.
 
-![Info panel in a real Thurbox: wide dark, compact dark, compact light](media/demo.gif)
+![Info panel in a real Thurbox, Doom theme: wide column, then compact column](media/demo.gif)
 
-The recording uses a disposable profile, a demo repository and mock quota
-answers. No credentials are read. Reproduce it with `vhs demo/demo.tape`.
+The recording runs a released Thurbox in its built-in Doom theme, with a
+disposable profile and HOME, a demo repository and mock quota answers. No
+credentials are read. Reproduce it with `vhs demo/demo.tape`, which drives
+whichever `thurbox` is first on PATH.
 
 ## Install
 
