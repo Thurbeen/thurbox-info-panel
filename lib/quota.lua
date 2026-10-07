@@ -203,49 +203,60 @@ function quota.parse(answer, now)
       local status = (aged or st.stale or st.status == "stale") and "stale"
         or st.status
         or "unavailable"
-      local account = p.accountKey or object(p.accountKeys)[1] or "default"
-      local scopes = object(object(p.quotaSemantics).effectiveAvailability)
-      if #scopes == 0 then
-        scopes = { { scope = "all_models", status = "unknown" } }
+      local account = p.accountKey or object(p.accountKeys)[1]
+      account = type(account) == "string" and account or "default"
+      local bindings, limiting, untrusted = {}, {}, {}
+      for _, id in ipairs(object(st.untrustedWindowIds)) do
+        untrusted[id] = true
       end
-      for _, raw_scope in ipairs(scopes) do
+      for _, raw_scope in ipairs(object(object(p.quotaSemantics).effectiveAvailability)) do
         local scope = object(raw_scope)
-        local percent = scope.effectivePercentRemaining
+        local trusted = scope.status == "known"
+        for _, id in ipairs(object(scope.boundedBy)) do
+          if untrusted[id] then
+            trusted = false
+          end
+        end
+        if trusted then
+          for _, id in ipairs(object(scope.limitingWindowIds)) do
+            limiting[id] = true
+          end
+        end
+      end
+      local windows = {}
+      for _, raw_window in ipairs(object(p.windows)) do
+        local w = object(raw_window)
+        local percent = w.percentRemaining
         local known = status == "fresh"
-          and scope.status == "known"
+          and not untrusted[w.id]
           and type(percent) == "number"
           and percent == percent
           and percent >= 0
           and percent <= 100
-        local bindings = {}
-        for _, id in ipairs(object(scope.limitingWindowIds)) do
-          for _, raw_window in ipairs(object(p.windows)) do
-            local w = object(raw_window)
-            if w.id == id then
-              bindings[#bindings + 1] = { label = w.label or id, reset = w.resetsAt or w.resetText }
-            end
-          end
-        end
-        -- Missing authoritative binding information must not become a synthetic quota.
-        if #bindings == 0 then
-          known = false
-        end
-        for _, id in ipairs(object(st.untrustedWindowIds)) do
-          for _, bound in ipairs(object(scope.boundedBy)) do
-            if id == bound then
-              known = false
-            end
-          end
-        end
-        rows[#rows + 1] = {
-          provider = p.provider,
-          account = account,
-          scope = scope.scope or "unknown",
-          status = known and "fresh" or (status == "fresh" and "unavailable" or status),
+        local label = type(w.label) == "string" and w.label
+          or type(w.id) == "string" and w.id
+          or "window"
+        local reset = w.resetsAt or w.resetText
+        reset = type(reset) == "string" and reset or nil
+        local window = {
+          label = label,
           remaining = known and percent or nil,
-          bindings = bindings,
+          reset = reset,
+          binding = limiting[w.id] == true,
+          status = known and "fresh" or (status == "fresh" and "unavailable" or status),
         }
+        windows[#windows + 1] = window
+        if window.binding then
+          bindings[#bindings + 1] = window
+        end
       end
+      rows[#rows + 1] = {
+        provider = p.provider,
+        account = account,
+        status = status == "fresh" and (#windows > 0 and "fresh" or "unavailable") or status,
+        bindings = bindings,
+        windows = windows,
+      }
     end
   end
   return { status = "ready", rows = rows }

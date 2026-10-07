@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 6,
+  "generatedAt": "2026-10-07T12:00:00Z",
+  "providers": [
+    {
+      "provider": "claude",
+      "accountKey": "personal",
+      "accountKeys": [
+        "personal"
+      ],
+      "windows": [
+        {
+          "id": "session",
+          "label": "session",
+          "kind": "session",
+          "percentRemaining": 80,
+          "resetsAt": "2026-10-07T15:00:00Z"
+        },
+        {
+          "id": "weekly",
+          "label": "week",
+          "kind": "weekly",
+          "percentRemaining": 60,
+          "resetsAt": "2026-10-12T12:00:00Z"
+        },
+        {
+          "id": "opus_week",
+          "label": "Opus model week",
+          "kind": "weekly",
+          "percentRemaining": null,
+          "resetsAt": "2026-10-13T09:30:00Z"
+        }
+      ],
+      "state": {
+        "status": "fresh",
+        "stale": false,
+        "untrustedWindowIds": [
+          "weekly"
+        ]
+      },
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 60,
+            "boundedBy": [
+              "session",
+              "weekly"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
+          },
+          {
+            "scope": "opus",
+            "status": "known",
+            "effectivePercentRemaining": 60,
+            "boundedBy": [
+              "session",
+              "weekly",
+              "opus_week"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

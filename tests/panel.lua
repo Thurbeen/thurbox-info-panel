@@ -68,13 +68,19 @@ local cases = {
       "copilot",
       "zai",
       "agy",
-      "60% left",
+      "60%",
       "25%",
       "week",
       "2026-10-12",
       "unavailable",
       "█",
     },
+  },
+  {
+    name = "partial",
+    answer = { state = "done", status = 0, stdout = read("tests/fixtures/partial.json") },
+    want = { "80%", "unavailable", "binding unavailable", "Opus model week" },
+    absent = "60%",
   },
   {
     name = "stale",
@@ -110,6 +116,26 @@ local cases = {
   { name = "cjk", cjk = true, want = { "Name", "loading" } },
   { name = "untrusted", untrusted = true, want = { "trust" } },
 }
+local function highlighted(node)
+  for _, line in ipairs(type(node.text) == "table" and node.text or {}) do
+    for _, span in ipairs(line) do
+      if
+        (span.text or ""):find("* week", 1, true)
+        and span.style
+        and span.style.bold
+        and span.style.fg == "accent"
+      then
+        return true
+      end
+    end
+  end
+  for _, child in ipairs(node.children or {}) do
+    if highlighted(child) then
+      return true
+    end
+  end
+  return false
+end
 local failures = 0
 for _, case in ipairs(cases) do
   for _, width in ipairs({ 28, 44, 80 }) do
@@ -127,7 +153,9 @@ for _, case in ipairs(cases) do
         },
       },
       registry = { settings = {} },
-      theme = { roles = {} },
+      theme = {
+        roles = { accent = "accent", status_idle = "ok", status_working = "warn", danger = "bad" },
+      },
       metrics = {},
       runs = { quota = case.answer },
       platform = { os = "linux" },
@@ -144,9 +172,33 @@ for _, case in ipairs(cases) do
     command = function() end
     local ok, err = pcall(function()
       local pane = dofile("info_panel.lua")
-      local s = screen(pane.render({ width = width, height = 80 }), {}, width)
+      local tree = pane.render({ width = width, height = 80 })
+      local s = screen(tree, {}, width)
       for _, want in ipairs(case.want) do
         contains(s, want)
+      end
+      if case.name == "several" then
+        if width >= 36 then
+          contains(s, "session")
+          contains(s, "Opus week")
+          contains(s, "80%")
+          contains(s, "90%")
+          contains(s, "2026-10-13")
+          local column
+          for line in s:gmatch("[^\n]+") do
+            local at = line:find("█", 1, true)
+            if at then
+              assert(not column or at == column, "window bars must align across subscriptions")
+              column = at
+            end
+          end
+        else
+          assert(not s:find("Opus week", 1, true), "compact must collapse nonbinding windows")
+          assert(not s:find("2026-10-07 15:00", 1, true), "compact must keep binding resets only")
+        end
+        contains(s, "* week")
+        contains(s, "* binding")
+        assert(highlighted(tree), "binding label must use theme accent and bold")
       end
       if case.absent then
         assert(not s:find(case.absent, 1, true), "fake quota value")
@@ -167,4 +219,4 @@ for _, case in ipairs(cases) do
   end
 end
 assert(failures == 0, failures .. " panel cases failed")
-print("24 panel cases passed")
+print("27 panel cases passed")
