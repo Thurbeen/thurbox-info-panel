@@ -81,7 +81,7 @@ are not displayed. Quotas describe **local accounts**, even when the selected
 session runs on a remote host.
 
 Remove the scheduler with `thurbox-cli extension uninstall info-panel-refresh`;
-remove the pane with `thurbox-cli plugin remove info-panel` and remove the layout
+remove the pane with `thurbox-cli plugin remove info_panel` and remove the layout
 entry. Plugin updates use `thurbox-cli plugin update`.
 
 ## Other readouts
