@@ -51,8 +51,10 @@ local function screen(node, lines, width)
   end
   return table.concat(lines, "\n")
 end
+-- A narrow column wraps a message at word boundaries; read it back unwrapped.
 local function contains(s, needle)
-  assert(s:find(needle, 1, true), "missing " .. needle .. "\n" .. s)
+  local flat = s:gsub("%s*\n%s*", " ")
+  assert(flat:find(needle, 1, true), "missing " .. needle .. "\n" .. s)
 end
 local cases = {
   {
@@ -90,8 +92,14 @@ local cases = {
   },
   {
     name = "failed",
-    answer = { state = "done", status = 1, ok = false, stdout = "", stderr = "network error" },
-    want = { "unavailable" },
+    answer = {
+      state = "done",
+      status = 1,
+      ok = false,
+      stdout = "",
+      stderr = "network error\nretry later",
+    },
+    want = { "unavailable", "exit 1", "network error" },
     absent = "0%",
   },
   {
@@ -111,6 +119,36 @@ local cases = {
     want = {
       "unavailable",
     },
+  },
+  {
+    name = "not run",
+    answer = { state = "failed", error = "no session  to run it in" },
+    want = { "unavailable", "no session" },
+  },
+  {
+    name = "timed out",
+    answer = { state = "done", ok = false, stdout = "", timed_out = true },
+    want = { "timed out after 30s" },
+  },
+  {
+    name = "truncated",
+    answer = { state = "done", status = 0, ok = true, stdout = "{", truncated = true },
+    want = { "output truncated" },
+  },
+  -- quota-axi reads this machine's accounts, so it must run in a local session
+  -- even while a remote one is selected.
+  {
+    name = "remote selected",
+    remote = true,
+    answer = { state = "done", status = 0, ok = true, stdout = read("tests/fixtures/several.json") },
+    want = { "60%" },
+  },
+  {
+    name = "only remote",
+    remote = true,
+    only_remote = true,
+    want = { "needs a local session" },
+    asks = 0,
   },
   { name = "pending", want = { "loading" } },
   { name = "cjk", cjk = true, want = { "Name", "loading" } },
@@ -139,18 +177,28 @@ end
 local failures = 0
 for _, case in ipairs(cases) do
   for _, width in ipairs({ 28, 44, 80 }) do
-    store = { selected = "demo" }
+    store = { selected = case.remote and "far" or "demo" }
     state = {}
     thurbox = {
       taken_at_ms = 1791374400000,
       sessions = {
         {
+          id = "far",
+          name = "far",
+          agent = "codex",
+          status = "idle",
+          host = "devbox",
+          cwd = "/srv/far",
+          repos = {},
+        },
+        not case.only_remote and {
           id = "demo",
           name = case.cjk and string.rep("界", 25) or "demo",
           agent = "codex",
           status = "idle",
+          cwd = "/work/demo",
           repos = {},
-        },
+        } or nil,
       },
       registry = { settings = {} },
       theme = {
@@ -164,7 +212,8 @@ for _, case in ipairs(cases) do
     run = not case.untrusted
         and function(key, cmd, opts)
           assert(key == "quota" and cmd == "quota-axi --json", "portable local command")
-          assert(opts.session == nil, "account quota must stay local")
+          -- Thurbox fails a run with no session before starting it.
+          assert(opts.session == "demo", "account quota must run in a local session")
           assert(opts.ttl >= 60 and opts.timeout <= 30)
           asks = asks + 1
         end
@@ -204,13 +253,24 @@ for _, case in ipairs(cases) do
         assert(not s:find(case.absent, 1, true), "fake quota value")
       end
       assert(not s:find("kimi", 1, true), "provider not set up must be omitted")
+      if case.name == "failed" then
+        -- Same exit status, new reason: the cached reading must not keep the old one.
+        thurbox.runs.quota =
+          { state = "done", status = 1, ok = false, stdout = "", stderr = "credential expired" }
+        contains(
+          screen(pane.render({ width = width, height = 80 }), {}, width),
+          "credential expired"
+        )
+        thurbox.runs.quota = case.answer
+      end
       for _ = 1, 100 do
         pane.render({ width = width, height = 80 })
       end
       assert(asks == 0, "worker requested in frame loop")
       assert(pane.pure == true, "pure render cache is required")
       pane.on_action("info.quota.refresh")
-      assert(asks == (case.untrusted and 0 or 1), "refresh action did not request the worker")
+      local want_asks = case.asks or (case.untrusted and 0 or 1)
+      assert(asks == want_asks, "refresh action asked " .. asks .. " times, want " .. want_asks)
     end)
     if not ok then
       failures = failures + 1
@@ -219,4 +279,4 @@ for _, case in ipairs(cases) do
   end
 end
 assert(failures == 0, failures .. " panel cases failed")
-print("27 panel cases passed")
+print(#cases * 3 .. " panel cases passed")
