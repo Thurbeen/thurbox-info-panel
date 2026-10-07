@@ -183,11 +183,7 @@ function quota.parse(answer, now)
     return { status = "loading", rows = {} }
   end
   if answer.state ~= "done" or answer.status ~= 0 or answer.timed_out or answer.truncated then
-    local msg = (answer.stderr or answer.error or ""):lower()
-    local missing = answer.status == 127
-      or answer.status == 9009
-      or msg:find("not recognized", 1, true)
-      or msg:find("not found", 1, true)
+    local missing = answer.status == 127 or answer.status == 9009
     return { status = missing and "missing" or "unavailable", rows = {} }
   end
   local data = quota.decode(answer.stdout)

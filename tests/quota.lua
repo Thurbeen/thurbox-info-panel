@@ -30,4 +30,8 @@ local zero =
   [[{"schemaVersion":6,"generatedAt":"2026-10-07T12:00:00Z","providers":[{"provider":"codex","state":{"status":"fresh"},"windows":[{"id":"session","label":"session","resetsAt":"2026-10-07T16:00:00Z"},{"id":"weekly","label":"week","resetsAt":"2026-10-12T12:00:00Z"}],"quotaSemantics":{"effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":0,"boundedBy":["session","weekly"],"limitingWindowIds":["session","weekly"]}]}}]}]]
 local z = q.parse({ state = "done", status = 0, stdout = zero }, now).rows[1]
 assert(z.remaining == 0 and #z.bindings == 2 and z.bindings[1].reset ~= z.bindings[2].reset)
+assert(
+  q.parse({ state = "done", status = 1, stderr = "credential file not found" }, now).status
+    == "unavailable"
+)
 print("Quota contract tests passed")
