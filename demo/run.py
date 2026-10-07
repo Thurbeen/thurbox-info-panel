@@ -34,7 +34,18 @@ layout.write_text(layout.read_text().replace('slot = "info", len = 44', f'slot =
 fixture = json.loads((repo / "tests/fixtures/several.json").read_text())
 fixture["providers"] = fixture["providers"][:4]
 from datetime import datetime, timezone
-fixture["generatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+# Move the whole reading to now, resets included, so countdowns read as recorded.
+now = datetime.now(timezone.utc).replace(microsecond=0)
+def iso(t):
+    return t.isoformat().replace("+00:00", "Z")
+def parse(s):
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+shift = now - parse(fixture["generatedAt"])
+fixture["generatedAt"] = iso(now)
+for provider in fixture["providers"]:
+    for window in provider.get("windows", []):
+        if "resetsAt" in window:
+            window["resetsAt"] = iso(parse(window["resetsAt"]) + shift)
 answer = json.dumps(fixture)
 pane = root / "ui/thurbox-info-panel/info_panel.lua"
 source = pane.read_text()

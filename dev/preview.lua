@@ -221,8 +221,8 @@ local function flatten(node, out)
             out[#out + 1] = tostring(line.text)
           else
             local parts = {}
-            for _, run in ipairs(line) do
-              parts[#parts + 1] = tostring(run.text or "")
+            for _, span in ipairs(line) do
+              parts[#parts + 1] = tostring(span.text or "")
             end
             out[#out + 1] = table.concat(parts)
           end

@@ -64,17 +64,39 @@ result state change, or the snapshot crosses a minute boundary. The kernel
 caches the pure render between changes.
 
 Each configured subscription/account is labelled separately, including multiple
-accounts of one provider. Every reported window gets its own labelled bar,
-remaining percentage and reset time (UTC): session, week and any model-specific
-week stay separate. Bold accent labels marked `*` identify binding windows from
-quota-axi's schema 5/6 `quotaSemantics.effectiveAvailability`. Tied and model-scope
-bindings are preserved. No providers, accounts or windows are summed together.
+accounts of one provider, and the block reads like fleet's queue-pane FUEL rows:
 
-At 36 columns or wider, aligned labels and percentages show all windows. Narrower
-columns collapse to the binding windows per subscription, keeping each reset.
-Without authoritative binding metadata, all windows remain visible and the panel
-says **binding unavailable**. Gauge colours use the active theme's good, warning
-and danger roles: remaining above 40%, above 15% through 40%, and 15% or less.
+```text
+  Quota left · local accounts             3m ago
+  claude · personal █┃█████░░░░░  60%  ↻ 1d 5h
+    5h session                    80%  ↻ 3h
+    week                          60%  ↻ 1d 5h
+    Opus model week               90%  ↻ 5d 21h
+  codex             binding unavailable
+    session                       33%  ↻ <1m
+    week                          45%
+```
+
+One line per subscription carries a gauge for its binding window (from
+quota-axi's schema 5/6 `quotaSemantics.effectiveAvailability`; the tightest one
+when several bind), the percentage remaining and that window's reset. Every
+reported window follows on its own indented line, the binding ones in the bold
+accent; tied and model-scope bindings are preserved. No providers, accounts or
+windows are summed together. Numbers are right-aligned in one column across the
+block, and labels are cut with `…` rather than wrapped.
+
+Times are compact countdowns and ages: the two largest units, floored, with no
+seconds (`<1m`, `45m`, `5h`, `23h 59m`, `1d 5h`, `10d`; `now` once due). The
+reading's age appears beside the heading only once a refresh is overdue (over
+90 seconds old).
+
+Below 36 columns the label takes its own line, with the binding window's name
+beside it when it fits, and the gauge goes underneath; the window lines are kept
+only when they add something: a tie, a model-scope binding, or no binding at all.
+Without authoritative binding metadata every window stays visible and the
+subscription says **binding unavailable**. Gauge colours use the active theme's
+good, warning and danger roles: remaining above 40%, above 15% through 40%, and
+15% or less; the bar ticks the 15% reserve with `┃`.
 
 Claude, Codex, Cursor, Copilot, Z.AI, Antigravity and other discovered providers
 use the same path. Gemini model windows are shown when quota-axi reports them
@@ -125,7 +147,10 @@ Thurbox and those tools on PATH. Tests never grant a capability or change the
 live interface. JSON fixtures cover several providers, two accounts, individual
 session/weekly/model windows,
 unavailable, untrusted and stale readings; render tests cover 28, 44 and 80 columns and forbid worker
-requests from drawing. Native Windows CI installs and checks the same plugin.
+requests from drawing. `tests/snapshots/` pins the quota section at 50 and 30 columns
+(`lua tests/snapshot.lua .cache/check/ui --update` rewrites them), and
+`tests/format.lua` pins the duration format at its boundaries.
+Native Windows CI installs and checks the same plugin.
 
 `thurbox.yml` is the release sandbox contract. Host scripts use
 `dev/selene.toml`. For a plain-text preview:
@@ -144,9 +169,10 @@ agree. This change does not publish a release.
 Install the PR revision in a disposable interface, place the column as above,
 and run `thurbox-cli plugin check`. Open Thurbox, press F2 and grant run in the
 Interface tab. With quota-axi on PATH, use the refresh palette command: each
-configured account should show all of its window bars and resets at 44 columns,
-with binding labels highlighted, or an honest status word. At 28 columns, only
-binding windows should remain when the binding metadata is available. Install
+configured account should show one gauge with its reset countdown and every
+window under it at 44 columns, with binding labels highlighted, or an honest
+status word. At 28 columns, the gauge moves under the label and only binding
+windows should remain when the binding metadata is available. Install
 the companion extension and leave the interface idle
 across a minute boundary; its quota answer should refresh without switching
 sessions. Hide Info with F2 and show it again. Resize the column to 28 and 44

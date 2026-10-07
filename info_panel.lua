@@ -245,8 +245,9 @@ end
 ---
 --- The renderer clips an overlong row at the border anyway. Doing it here means
 --- the PLUGIN chooses what goes, and these rows are built most-important-first,
---- so what goes is the tail: a truncated `3 untracked` beats a `-38` that ran
---- off the edge because a count nobody asked about was in front of it.
+--- so what goes is the tail. A span that does not fit WHOLE is dropped rather
+--- than cut — `+214 / …` reads as a broken number — along with any separator it
+--- leaves dangling. Only a first span is ever cut, since dropping it leaves nothing.
 local function clip(spans, room)
   local out = {}
   local used = 0
@@ -257,12 +258,14 @@ local function clip(spans, room)
       out[#out + 1] = span
       used = used + len
     else
-      local left = room - used
-      if left > 0 then
-        out[#out + 1] = { text = widgets.truncate(text, left), style = span.style }
+      if used == 0 and room > 0 then
+        out[#out + 1] = { text = widgets.truncate(text, room), style = span.style }
       end
       break
     end
+  end
+  while #out > 1 and (out[#out].text or ""):match("^[%s/·]*$") do
+    out[#out] = nil
   end
   return out
 end
@@ -530,15 +533,16 @@ end
 local function push_git(rows, git, width)
   if git.files > 0 or git.dirty then
     local files = (git.files == 1) and "1 file" or string.format("%d files", git.files)
+    -- The diff first: it is what a narrow column keeps when the rest is clipped.
     local spans = {
-      { text = files, style = { fg = theme.text } },
-      { text = "  " },
       { text = string.format("+%d", git.insertions), style = { fg = theme.ok } },
       { text = " / ", style = { fg = theme.muted } },
       { text = string.format("-%d", git.deletions), style = { fg = theme.bad } },
+      { text = "  " },
+      { text = files, style = { fg = theme.text } },
     }
     -- Untracked-only changes count as dirty with nothing in the diff, so say so
-    -- rather than showing "0 files +0 / -0" and nothing else.
+    -- rather than showing "+0 / -0  0 files" and nothing else.
     if git.dirty and git.files == 0 then
       spans[#spans + 1] = { text = "  dirty", style = { fg = theme.warn } }
     end
@@ -1033,12 +1037,13 @@ local function push_automations(rows, automations, width)
     elseif outcome == "ok" or outcome == "success" then
       style = { fg = theme.ok }
     end
-    -- Half the row for the name, so a long one cannot leave no room for the
-    -- schedule beside it — which is the pair that says whether this will fire.
+    -- The name gives way to the schedule beside it, down to eight columns —
+    -- the pair says whether this will fire, and a cut schedule says nothing.
     local room = inner_width(width) - #INDENT
+    local schedule = widgets.len(entry.schedule or "")
     local spans = {
       {
-        text = widgets.truncate(entry.name or "?", math.max(8, math.floor(room / 2))),
+        text = widgets.truncate(entry.name or "?", math.max(8, room - 2 - schedule)),
         style = { fg = theme.secondary },
       },
       { text = "  " .. (entry.schedule or ""), style = { fg = theme.muted } },
