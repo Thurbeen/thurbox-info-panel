@@ -83,11 +83,12 @@ Providers positively marked `notSetUp` are omitted. Each window uses only its ow
 measured `percentRemaining`; missing or untrusted readings show **unavailable**,
 and stale readings show **stale**, without a number or bar. A failed fetch says
 why after **unavailable**: the run did not finish, timed out, had its output
-truncated, or exited non-zero (with the first line quota-axi wrote to stderr),
-or its output was unreadable or of an unsupported schema. Cached reports older
-than five minutes relative to the snapshot are marked stale. Account emails are
-not displayed. Quotas describe **local accounts**, even when the selected session
-runs on a remote host: Thurbox runs a program in a session, so the panel runs
+truncated, or exited non-zero (with the first line of its error, cleaned of
+terminal escapes and cut to 120 characters), or its output was unreadable or of
+an unsupported schema. Cached reports older than five minutes relative to the
+snapshot are marked stale. Account emails from the report are not displayed.
+Quotas describe **local accounts**, even when the selected session runs on a
+remote host: Thurbox runs a program in a session, so the panel runs
 quota-axi in the selected session when it is local and otherwise in the first
 local one, and says **needs a local session** when there is none.
 

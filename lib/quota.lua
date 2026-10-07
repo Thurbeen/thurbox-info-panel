@@ -182,9 +182,18 @@ local function unavailable(reason)
   return { status = "unavailable", reason = reason, rows = {} }
 end
 
--- The first non-blank line of a stream, trimmed.
+-- The first non-blank line of a stream, trimmed, without terminal escapes or
+-- control characters, and short enough to wrap into a few rows.
 local function first_line(s)
-  return type(s) == "string" and s:match("^%s*([^\r\n]-)%s*[\r\n]") or nil
+  local line = type(s) == "string" and (s .. "\n"):match("^%s*([^\r\n]-)%s*[\r\n]")
+  if not line or line == "" then
+    return nil
+  end
+  line = line:gsub("\27%[[%d;?]*%a", ""):gsub("%c", "")
+  if #line > 120 then
+    line = line:sub(1, 117):gsub("[\128-\191]*$", ""):gsub("[\192-\255]$", "") .. "..."
+  end
+  return line
 end
 
 --- `timeout` is the one the run was asked with, so a timeout can say how long.
@@ -210,8 +219,10 @@ function quota.parse(answer, now, timeout)
     return unavailable("killed by a signal")
   end
   if answer.status ~= 0 then
-    local line = first_line((answer.stderr or "") .. "\n")
-    return unavailable("exit " .. answer.status .. ((line and line ~= "") and (": " .. line) or ""))
+    -- quota-axi prints its own errors on stdout (`error: "..."`), others on stderr.
+    local line = first_line(answer.stderr) or first_line(answer.stdout)
+    line = line and (line:match('^error:%s*"(.*)"$') or line:match("^error:%s*(.+)$") or line)
+    return unavailable("exit " .. answer.status .. (line and (": " .. line) or ""))
   end
   local data, err = quota.decode(answer.stdout)
   if type(data) ~= "table" then

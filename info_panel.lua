@@ -727,6 +727,9 @@ local function quota_reading()
         tostring(answer.status),
         tostring(answer.timed_out),
         tostring(answer.truncated),
+        -- The reason shown for a failure comes from these.
+        tostring(answer.error),
+        tostring(answer.stderr),
       }, ":")
     or "pending"
   if parsed_key ~= key or parsed_stdout ~= stdout or parsed_at ~= minute or not parsed then

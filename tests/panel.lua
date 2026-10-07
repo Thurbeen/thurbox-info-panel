@@ -253,6 +253,16 @@ for _, case in ipairs(cases) do
         assert(not s:find(case.absent, 1, true), "fake quota value")
       end
       assert(not s:find("kimi", 1, true), "provider not set up must be omitted")
+      if case.name == "failed" then
+        -- Same exit status, new reason: the cached reading must not keep the old one.
+        thurbox.runs.quota =
+          { state = "done", status = 1, ok = false, stdout = "", stderr = "credential expired" }
+        contains(
+          screen(pane.render({ width = width, height = 80 }), {}, width),
+          "credential expired"
+        )
+        thurbox.runs.quota = case.answer
+      end
       for _ = 1, 100 do
         pane.render({ width = width, height = 80 })
       end

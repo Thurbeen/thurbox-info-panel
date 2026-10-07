@@ -70,6 +70,20 @@ assert(
     == "exit 2: bad flag --json"
 )
 assert(reason({ state = "done", status = 3, stdout = "", stderr = "" }) == "exit 3")
+-- quota-axi reports its own errors on stdout, in TOON.
+assert(reason({
+  state = "done",
+  status = 2,
+  stdout = 'error: "unknown argument: --bogus"\ncode: VALIDATION_ERROR\n',
+  stderr = "",
+}) == "exit 2: unknown argument: --bogus")
+-- Terminal escapes are dropped and a long line is cut.
+assert(
+  reason({ state = "done", status = 1, stdout = "", stderr = "\27[31mError:\27[0m boom\n" })
+    == "exit 1: Error: boom"
+)
+local long = reason({ state = "done", status = 1, stdout = "", stderr = string.rep("x", 5000) })
+assert(#long <= 128, "reason must be bounded, got " .. #long)
 assert(reason({ state = "done", status = 0, stdout = "{broken" }):find("^unreadable output"))
 assert(
   reason({ state = "done", status = 0, stdout = [[{"schemaVersion":4,"providers":[]}]] })
