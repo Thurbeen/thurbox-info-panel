@@ -153,13 +153,21 @@ function quota.decode(text)
   return result
 end
 
--- ISO timestamps in quota-axi are UTC. Gregorian civil date to epoch seconds.
+-- ISO timestamps, `Z` or with an explicit offset. Gregorian civil date to
+-- epoch seconds.
 local function epoch(s)
   if type(s) ~= "string" then
     return nil
   end
   local y, m, d, h, minute, sec = s:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)")
-  if not y or not s:match("Z$") then
+  local offset = 0
+  local sign, oh, om = s:match("([+-])(%d%d):(%d%d)$")
+  if sign then
+    offset = (tonumber(oh) * 3600 + tonumber(om) * 60) * (sign == "-" and -1 or 1)
+  elseif not s:match("Z$") then
+    return nil
+  end
+  if not y then
     return nil
   end
   y, m, d = tonumber(y), tonumber(m), tonumber(d)
@@ -175,7 +183,7 @@ local function epoch(s)
     + d
     - 1
     - 719468
-  return days * 86400 + tonumber(h) * 3600 + tonumber(minute) * 60 + tonumber(sec)
+  return days * 86400 + tonumber(h) * 3600 + tonumber(minute) * 60 + tonumber(sec) - offset
 end
 
 local function unavailable(reason)
@@ -292,6 +300,7 @@ function quota.parse(answer, now, timeout)
           label = label,
           remaining = known and percent or nil,
           reset = reset,
+          resets_at = epoch(w.resetsAt),
           binding = limiting[w.id] == true,
           status = known and "fresh" or (status == "fresh" and "unavailable" or status),
         }
@@ -309,6 +318,6 @@ function quota.parse(answer, now, timeout)
       }
     end
   end
-  return { status = "ready", rows = rows }
+  return { status = "ready", rows = rows, generated_at = at }
 end
 return quota

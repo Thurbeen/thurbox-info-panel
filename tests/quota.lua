@@ -16,6 +16,16 @@ assert(model.rows[1].windows[2].binding == true)
 assert(model.rows[1].windows[3].remaining == 90 and not model.rows[1].windows[3].binding)
 assert(model.rows[1].windows[2].remaining == 60 and model.rows[2].windows[2].remaining == 25)
 assert(model.rows[1].bindings[1].reset == "2026-10-12T12:00:00Z")
+-- The instants the display counts down to and ages from, as epoch seconds.
+assert(model.rows[1].bindings[1].resets_at == 1791806400)
+assert(model.generated_at == now)
+-- An explicit offset is the same instant; a reset given only as text is kept.
+local offsets =
+  [[{"schemaVersion":6,"generatedAt":"2026-10-07T14:00:00+02:00","providers":[{"provider":"codex","state":{"status":"fresh"},"windows":[{"id":"a","percentRemaining":5,"resetsAt":"2026-10-07T12:30:00-01:30"},{"id":"b","percentRemaining":5,"resetText":"in 3 hours"}]}]}]]
+local o = q.parse({ state = "done", status = 0, stdout = offsets }, now)
+assert(o.generated_at == now, "offset generatedAt")
+assert(o.rows[1].windows[1].resets_at == now + 2 * 3600, "offset resetsAt")
+assert(o.rows[1].windows[2].resets_at == nil and o.rows[1].windows[2].reset == "in 3 hours")
 assert(q.parse(response, now + 301).rows[1].status == "stale")
 assert(
   q.parse({ state = "done", status = 0, stdout = response.stdout, truncated = true }, now).status

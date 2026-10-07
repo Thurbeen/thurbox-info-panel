@@ -4,6 +4,9 @@ package.path = UI .. "/?.lua;./?.lua;" .. package.path
 package.preload["thurbox-info-panel.lib.quota"] = function()
   return dofile("lib/quota.lua")
 end
+package.preload["thurbox-info-panel.lib.format"] = function()
+  return dofile("lib/format.lua")
+end
 -- These fixtures contain ASCII and single-column bars only.
 text = {
   width = function(s)
@@ -73,15 +76,16 @@ local cases = {
       "60%",
       "25%",
       "week",
-      "2026-10-12",
+      "↻ 5d",
       "unavailable",
-      "█",
+      "━",
     },
   },
   {
     name = "partial",
     answer = { state = "done", status = 0, stdout = read("tests/fixtures/partial.json") },
-    want = { "80%", "unavailable", "binding unavailable", "Opus model week" },
+    want = { "80%", "unavailable", "binding unavailable", "Opus" },
+    wide = { "Opus model week" },
     absent = "60%",
   },
   {
@@ -158,7 +162,7 @@ local function highlighted(node)
   for _, line in ipairs(type(node.text) == "table" and node.text or {}) do
     for _, span in ipairs(line) do
       if
-        (span.text or ""):find("* week", 1, true)
+        (span.text or ""):find("week", 1, true)
         and span.style
         and span.style.bold
         and span.style.fg == "accent"
@@ -175,6 +179,111 @@ local function highlighted(node)
   return false
 end
 local failures = 0
+-- Every narrow width: each window keeps a readable label and every number
+-- ends in one column.
+for width = 19, 36 do
+  store = { selected = "demo" }
+  thurbox = {
+    taken_at_ms = 1791374400000,
+    sessions = { { id = "demo", name = "demo", agent = "codex", status = "idle", cwd = "/w" } },
+    registry = { settings = {} },
+    theme = { roles = {} },
+    metrics = {},
+    runs = { quota = cases[1].answer },
+  }
+  run = function() end
+  local ok, err = pcall(function()
+    local s = screen(dofile("info_panel.lua").render({ width = width, height = 80 }), {}, width)
+    local column
+    for line in s:gmatch("[^\n]+") do
+      assert(not line:find("^%s*…"), "label cut to nothing: " .. line)
+      local at = line:find("%d%%")
+      if at then
+        at = utf8.len(line:sub(1, at + 1))
+        assert(not column or at == column, "numbers must align: " .. line)
+        column = at
+      end
+    end
+    contains(s, "week")
+    -- A countdown is never cut to keep more of a label.
+    if width >= 20 then
+      contains(s, "↻ 5d 21h")
+    end
+  end)
+  if not ok then
+    failures = failures + 1
+    print("FAIL narrow@" .. width .. ": " .. tostring(err))
+  end
+end
+-- A reset given as long text is shortened, never dropped; an untrusted window
+-- has no countdown at any width; a stale row's hidden windows do not shape the
+-- layout of the rows that are drawn.
+local edges =
+  [[{"schemaVersion":6,"generatedAt":"2026-10-07T12:00:00Z","providers":[{"provider":"codex","state":{"status":"fresh","untrustedWindowIds":["u"]},"windows":[{"id":"week","label":"week","percentRemaining":45,"resetsAt":"2026-10-08T12:00:00Z"},{"id":"s","label":"5h session","percentRemaining":50,"resetText":"resets when your billing cycle renews on the 1st"},{"id":"u","label":"untrusted one","percentRemaining":70,"resetsAt":"2026-10-08T11:00:00Z"}]},{"provider":"agy","state":{"status":"stale"},"windows":[{"id":"g","label":"Gemini 2.5 Pro weekly","percentRemaining":75}]}]}]]
+for _, width in ipairs({ 30, 44, 50, 80 }) do
+  store = { selected = "demo" }
+  thurbox = {
+    taken_at_ms = 1791374400000,
+    sessions = { { id = "demo", name = "demo", agent = "codex", status = "idle", cwd = "/w" } },
+    registry = { settings = {} },
+    theme = { roles = {} },
+    metrics = {},
+    runs = { quota = { state = "done", status = 0, stdout = edges } },
+  }
+  run = function() end
+  local ok, err = pcall(function()
+    local s = screen(dofile("info_panel.lua").render({ width = width, height = 80 }), {}, width)
+    contains(s, "↻ resets")
+    for line in s:gmatch("[^\n]+") do
+      assert(
+        not (line:find("untrusted", 1, true) and line:find("↻", 1, true)),
+        "countdown: " .. line
+      )
+      if width == 44 and line:find("^%s+week") then
+        assert(line:find("↻ 1d", 1, true), "stale labels forced two lines: " .. line)
+      end
+    end
+  end)
+  if not ok then
+    failures = failures + 1
+    print("FAIL edges@" .. width .. ": " .. tostring(err))
+  end
+end
+-- A long automation name gives way to its outcome, and a short agent turn
+-- keeps its seconds.
+for _, width in ipairs({ 30, 44 }) do
+  store = { selected = "demo" }
+  thurbox = {
+    taken_at_ms = 1791374400000,
+    sessions = { { id = "demo", name = "demo", agent = "codex", status = "idle", cwd = "/w" } },
+    registry = { settings = {} },
+    theme = { roles = {} },
+    metrics = {
+      sessions = {
+        demo = { cpu_percent = 1, agent = { duration_ms = 45000, api_duration_ms = 800 } },
+      },
+    },
+    automations = {
+      {
+        name = "renovate-dependency-update-weekly",
+        schedule = "0 3 * * 1",
+        enabled = true,
+        last_outcome = "failed",
+      },
+    },
+  }
+  run = nil
+  local ok, err = pcall(function()
+    local s = screen(dofile("info_panel.lua").render({ width = width, height = 80 }), {}, width)
+    contains(s, "failed")
+    contains(s, "45s")
+    contains(s, "800ms")
+  end)
+  if not ok then
+    failures = failures + 1
+    print("FAIL automation@" .. width .. ": " .. tostring(err))
+  end
+end
 for _, case in ipairs(cases) do
   for _, width in ipairs({ 28, 44, 80 }) do
     store = { selected = case.remote and "far" or "demo" }
@@ -232,22 +341,46 @@ for _, case in ipairs(cases) do
           contains(s, "Opus week")
           contains(s, "80%")
           contains(s, "90%")
-          contains(s, "2026-10-13")
-          local column
-          for line in s:gmatch("[^\n]+") do
-            local at = line:find("█", 1, true)
-            if at then
-              assert(not column or at == column, "window bars must align across subscriptions")
-              column = at
-            end
-          end
-        else
-          assert(not s:find("Opus week", 1, true), "compact must collapse nonbinding windows")
-          assert(not s:find("2026-10-07 15:00", 1, true), "compact must keep binding resets only")
+          contains(s, "↻ 5d 21h")
         end
-        contains(s, "* week")
-        contains(s, "* binding")
+        -- Every window of every subscription at every width: Claude's 5h and
+        -- week windows each with a number and a reset, model windows too.
+        local five_hour, gauges = 0, 0
+        for line in s:gmatch("[^\n]+") do
+          if line:find("^%s+5h session") and line:find("↻ 3h", 1, true) then
+            five_hour = five_hour + 1
+          end
+          if
+            (line:find("━", 1, true) or line:find("─", 1, true))
+            and line:find("^%s")
+            and line:find("%d%%")
+          then
+            gauges = gauges + 1
+          end
+        end
+        assert(five_hour == 3, "a 5h row per claude account and codex, got " .. five_hour)
+        -- One gauge per measured window, plus System's CPU and RAM when shown.
+        assert(gauges == 15, "a gauge for each of the 15 windows, got " .. gauges)
+        contains(s, "Opus")
+        contains(s, "↻ 5d 21h")
+        -- Every number ends in one column, gauge rows and window rows alike.
+        local column
+        for line in s:gmatch("[^\n]+") do
+          local at = line:find("%d%%")
+          if at then
+            at = utf8.len(line:sub(1, at + 1))
+            assert(not column or at == column, "numbers must align across subscriptions")
+            column = at
+          end
+        end
+      end
+      if case.name == "several" then
         assert(highlighted(tree), "binding label must use theme accent and bold")
+      end
+      if width >= 36 then
+        for _, want in ipairs(case.wide or {}) do
+          contains(s, want)
+        end
       end
       if case.absent then
         assert(not s:find(case.absent, 1, true), "fake quota value")

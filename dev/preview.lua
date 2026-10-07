@@ -59,13 +59,17 @@ text = {
 package.preload["thurbox-info-panel.lib.quota"] = function()
   return dofile("lib/quota.lua")
 end
+package.preload["thurbox-info-panel.lib.format"] = function()
+  return dofile("lib/format.lua")
+end
 
 local SESSION = "s1-0000-0000-0000-000000000000"
 
 -- The globals the kernel injects. Only the fields this pane reads are here; the
 -- shape follows `LuaHost::publish` in the thurbox repository.
 thurbox = {
-  taken_at_ms = 1700000000000,
+  -- Three minutes after the quota fixture below was generated.
+  taken_at_ms = 1791374400000,
   registry = { settings = {} },
   theme = {
     name = "preview",
@@ -175,6 +179,12 @@ thurbox = {
 store = { selected = SESSION }
 function command() end
 
+-- A fixed quota reading, so the quota section draws as it does once trusted.
+function run() end
+local fixture = assert(io.open("tests/fixtures/display.json"))
+thurbox.runs = { quota = { state = "done", status = 0, stdout = fixture:read("a") } }
+fixture:close()
+
 if SCENARIO == "no-session" then
   store.selected = nil
 elseif SCENARIO == "bare" then
@@ -211,8 +221,8 @@ local function flatten(node, out)
             out[#out + 1] = tostring(line.text)
           else
             local parts = {}
-            for _, run in ipairs(line) do
-              parts[#parts + 1] = tostring(run.text or "")
+            for _, span in ipairs(line) do
+              parts[#parts + 1] = tostring(span.text or "")
             end
             out[#out + 1] = table.concat(parts)
           end

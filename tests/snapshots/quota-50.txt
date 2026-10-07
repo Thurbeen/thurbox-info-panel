@@ -1,0 +1,13 @@
+  Quota left · local accounts             3m ago
+  claude · personal
+    5h session      ━━━━━━━━━━──  80%  ↻ 3h
+    week            ━━━━━━━─────  60%  ↻ 1d 5h
+    Opus model week ━━━━━━━━━━━─  90%  ↻ 5d 21h
+  claude · work
+    5h session      ━───────────  12%  ↻ 45m
+    week            ━━━━━━━━━━━━ 100%  ↻ 10d
+  codex                      binding unavailable
+    session         ━━━━────────  33%  ↻ <1m
+    week            ━━━━━───────  45%
+  agy                                      stale
+  grok                               unavailable
