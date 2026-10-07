@@ -179,6 +179,73 @@ local function highlighted(node)
   return false
 end
 local failures = 0
+-- Every narrow width: each window keeps a readable label and every number
+-- ends in one column.
+for width = 19, 36 do
+  store = { selected = "demo" }
+  thurbox = {
+    taken_at_ms = 1791374400000,
+    sessions = { { id = "demo", name = "demo", agent = "codex", status = "idle", cwd = "/w" } },
+    registry = { settings = {} },
+    theme = { roles = {} },
+    metrics = {},
+    runs = { quota = cases[1].answer },
+  }
+  run = function() end
+  local ok, err = pcall(function()
+    local s = screen(dofile("info_panel.lua").render({ width = width, height = 80 }), {}, width)
+    local column
+    for line in s:gmatch("[^\n]+") do
+      assert(not line:find("^%s*…"), "label cut to nothing: " .. line)
+      local at = line:find("%d%%")
+      if at then
+        at = utf8.len(line:sub(1, at + 1))
+        assert(not column or at == column, "numbers must align: " .. line)
+        column = at
+      end
+    end
+    contains(s, "week")
+  end)
+  if not ok then
+    failures = failures + 1
+    print("FAIL narrow@" .. width .. ": " .. tostring(err))
+  end
+end
+-- A long automation name gives way to its outcome, and a short agent turn
+-- keeps its seconds.
+for _, width in ipairs({ 30, 44 }) do
+  store = { selected = "demo" }
+  thurbox = {
+    taken_at_ms = 1791374400000,
+    sessions = { { id = "demo", name = "demo", agent = "codex", status = "idle", cwd = "/w" } },
+    registry = { settings = {} },
+    theme = { roles = {} },
+    metrics = {
+      sessions = {
+        demo = { cpu_percent = 1, agent = { duration_ms = 45000, api_duration_ms = 800 } },
+      },
+    },
+    automations = {
+      {
+        name = "renovate-dependency-update-weekly",
+        schedule = "0 3 * * 1",
+        enabled = true,
+        last_outcome = "failed",
+      },
+    },
+  }
+  run = nil
+  local ok, err = pcall(function()
+    local s = screen(dofile("info_panel.lua").render({ width = width, height = 80 }), {}, width)
+    contains(s, "failed")
+    contains(s, "45s")
+    contains(s, "800ms")
+  end)
+  if not ok then
+    failures = failures + 1
+    print("FAIL automation@" .. width .. ": " .. tostring(err))
+  end
+end
 for _, case in ipairs(cases) do
   for _, width in ipairs({ 28, 44, 80 }) do
     store = { selected = case.remote and "far" or "demo" }
@@ -240,13 +307,18 @@ for _, case in ipairs(cases) do
         end
         -- Every window of every subscription at every width: Claude's 5h and
         -- week windows each with a number and a reset, model windows too.
-        local five_hour = 0
+        local five_hour, gauges = 0, 0
         for line in s:gmatch("[^\n]+") do
-          if line:find("^%s+5h") and line:find("80%", 1, true) and line:find("↻ 3h", 1, true) then
+          if line:find("^%s+5h session") and line:find("↻ 3h", 1, true) then
             five_hour = five_hour + 1
+          end
+          if (line:find("█", 1, true) or line:find("░", 1, true)) and line:find("%d%%") then
+            gauges = gauges + 1
           end
         end
         assert(five_hour == 3, "a 5h row per claude account and codex, got " .. five_hour)
+        -- One gauge per measured window, plus System's CPU and RAM when shown.
+        assert(gauges == 15, "a gauge for each of the 15 windows, got " .. gauges)
         contains(s, "Opus")
         contains(s, "↻ 5d 21h")
         -- Every number ends in one column, gauge rows and window rows alike.

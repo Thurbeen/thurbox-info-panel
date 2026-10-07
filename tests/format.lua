@@ -20,6 +20,8 @@ local cases = {
   { D + 5 * H + 59 * M, "1d 5h" },
   { 10 * D, "10d" },
   { 10 * D + 3 * H, "10d 3h" },
+  -- From a hundred days the day count alone, so nothing outgrows WIDEST.
+  { 144 * D + 23 * H, "144d" },
 }
 for _, case in ipairs(cases) do
   local got = format.duration(case[1])
@@ -28,4 +30,5 @@ end
 assert(format.duration(nil) == nil, "no instant, no duration")
 -- The widest any duration gets, which is what a reset column is sized to.
 assert(utf8.len(format.duration(99 * D + 23 * H)) <= format.WIDEST)
+assert(utf8.len(format.duration(9999 * D)) <= format.WIDEST)
 print(#cases .. " duration cases passed")

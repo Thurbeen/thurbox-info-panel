@@ -6,7 +6,8 @@ format.WIDEST = 7
 
 --- `seconds` as its two largest units, floored: `<1m`, `45m`, `5h`, `23h 59m`,
 --- `1d 5h`, `10d`. A zero second unit is dropped (`1h`, not `1h 0m`), seconds are
---- never shown, and nothing left reads `now`. Nil in, nil out.
+--- never shown, from a hundred days only the days are, and nothing left reads
+--- `now`. Nil in, nil out.
 function format.duration(seconds)
   if seconds == nil then
     return nil
@@ -23,6 +24,8 @@ function format.duration(seconds)
     return minutes .. "m"
   elseif minutes < 1440 then
     big, small, big_unit, small_unit = math.floor(minutes / 60), minutes % 60, "h", "m"
+  elseif minutes >= 144000 then
+    return math.floor(minutes / 1440) .. "d"
   else
     big, small, big_unit, small_unit =
       math.floor(minutes / 1440), math.floor(minutes % 1440 / 60), "d", "h"

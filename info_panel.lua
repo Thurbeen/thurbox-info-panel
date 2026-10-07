@@ -135,8 +135,14 @@ local function format_cost(usd)
   return string.format("$%.4f", usd)
 end
 
---- Elapsed milliseconds in the same compact units as every countdown here.
+--- Elapsed milliseconds in the same compact units as every countdown here, but
+--- exact under a minute: a short turn is `45s` or `800ms`, never `<1m`.
 local function format_duration(ms)
+  if ms < 1000 then
+    return string.format("%dms", ms)
+  elseif ms < 60000 then
+    return string.format("%ds", math.floor(ms / 1000))
+  end
   return format.duration(ms / 1000)
 end
 
@@ -764,26 +770,29 @@ local function quota_field(value, style, width)
   return { type = "text", len = #lines, text = lines }
 end
 
--- The quota block follows fleet's FUEL rows: one gauge per subscription for
--- the window that binds it, then each window's number and reset under it.
+-- The quota block follows fleet's FUEL rows: a name line per subscription,
+-- then one gauge per window with its label, bar, number and reset.
 
 --- Percent remaining at or under which a window is low, and under which it is
---- getting there. The bar ticks the reserve so the floor is seen, not spelled.
+--- getting there.
 local QUOTA_RESERVE = 15
 local QUOTA_WARN = 40
 
---- Columns a subscription's label may spend before it is cut with `…`.
-local QUOTA_LABEL_MAX = 18
+--- Columns a window label may spend before it is cut with `…`.
+local QUOTA_LABEL_MAX = 16
 
---- A bar narrower than this is a decoration; the number stands alone instead.
-local QUOTA_BAR_MIN = 6
-local QUOTA_BAR_MAX = 20
+--- A bar narrower than this does not read as a proportion. Beside its label a
+--- bar must be at least this wide, or the window takes two lines instead.
+local QUOTA_BAR_MIN = 8
+local QUOTA_BAR_MAX = 24
 
 --- `100%`, the widest number, so every number ends in the same column.
 local QUOTA_NUMBER = 4
 
---- `  ↻ 23h 59m`: the reset column is kept even for a window with none, so the
---- numbers above and below it never move.
+--- Window rows sit under their subscription's name, one level in.
+local QUOTA_SUB = INDENT .. "  "
+
+--- `  ↻ 23h 59m`: kept even for a window with no reset, so bars never move.
 local QUOTA_RESET = 4 + format.WIDEST
 
 local function quota_tone(remaining)
@@ -795,33 +804,16 @@ local function quota_tone(remaining)
   return theme.ok
 end
 
---- `remaining` as `cells` of bar, the reserve ticked where it falls. Spans are
---- coalesced by style, so a bar is a few spans rather than one per cell.
-local function quota_bar(remaining, cells)
+--- `remaining` as a bar of `cells`, then its number: `██████░░░░  60%`.
+local function gauge_spans(spans, remaining, cells)
   local filled = math.max(0, math.min(cells, math.floor(remaining / 100 * cells + 0.5)))
-  local mark = math.max(1, math.min(cells, math.floor(QUOTA_RESERVE / 100 * cells + 0.5)))
-  local full, empty, tick =
-    { fg = quota_tone(remaining) }, { fg = theme.muted }, { fg = theme.warn }
-  local spans, last = {}, nil
-  for cell = 1, cells do
-    local char, style = "░", empty
-    if cell == mark then
-      char, style = "┃", tick
-    elseif cell <= filled then
-      char, style = "█", full
-    end
-    if last and last.style == style then
-      last.text = last.text .. char
-    else
-      last = { text = char, style = style }
-      spans[#spans + 1] = last
-    end
-  end
-  return spans
-end
-
-local function quota_number(remaining)
-  return string.format("%3d%%", math.floor(remaining + 0.5))
+  local tone = quota_tone(remaining)
+  spans[#spans + 1] = { text = string.rep("█", filled), style = { fg = tone } }
+  spans[#spans + 1] = { text = string.rep("░", cells - filled), style = { fg = theme.muted } }
+  spans[#spans + 1] = {
+    text = string.format(" %3d%%", math.floor(remaining + 0.5)),
+    style = { fg = tone, bold = true },
+  }
 end
 
 --- How a subscription names itself: the provider, and its account unless the
@@ -833,26 +825,29 @@ local function account_label(row)
   return row.provider .. " · " .. row.account
 end
 
---- The window a subscription's gauge shows: its tightest binding window that
---- has a number.
-local function headline(row)
-  local best
-  for _, window in ipairs(row.bindings) do
-    if window.remaining and (not best or window.remaining < best.remaining) then
-      best = window
-    end
+--- When a window resets, as `↻ 1d 5h`. A reset quota-axi gave only as text is
+--- shown as given; none at all is nil.
+local function reset_text(window, now)
+  if window.resets_at and now > 0 then
+    return RESET_GLYPH .. " " .. format.duration(window.resets_at - now)
+  elseif window.reset then
+    return RESET_GLYPH .. " " .. window.reset
   end
-  return best
+  return nil
 end
 
---- The row's reset as `↻ 1d 5h`, or nothing when the window gave no instant.
-local function reset_spans(spans, window, now, gap)
-  if window.resets_at and now > 0 then
-    spans[#spans + 1] = {
-      text = gap .. RESET_GLYPH .. " " .. format.duration(window.resets_at - now),
-      style = { fg = theme.muted },
-    }
+--- A line of spans with `note` pushed to column `edge`, or dropped when it
+--- would not fit whole.
+local function with_note(spans, note, style, edge)
+  local used = 0
+  for _, span in ipairs(spans) do
+    used = used + widgets.len(span.text)
   end
+  if note and edge - used - widgets.len(note) >= 1 then
+    spans[#spans + 1] =
+      { text = string.rep(" ", edge - used - widgets.len(note)) .. note, style = style }
+  end
+  return { type = "text", len = 1, text = { spans } }
 end
 
 local function push_quota(rows, width)
@@ -884,113 +879,84 @@ local function push_quota(rows, width)
     return
   end
 
-  -- One geometry for the whole block, so every bar, number and reset sits in
-  -- the same column. A wide column puts the label beside the gauge; a narrow
-  -- one gives the label its own line, the gauge the next, and drops the bar
-  -- before it drops a number.
+  -- One geometry for the whole block, so every bar starts and every number
+  -- ends in the same column. Wide, a window is one line: label, gauge, reset.
+  -- When the bar would be too short beside the label, each window takes two
+  -- lines instead: the label and its reset, then the gauge across the column.
   local inner = inner_width(width)
   local label_width = 1
   for _, row in ipairs(reading.rows) do
-    label_width = math.max(label_width, widgets.len(account_label(row)))
+    for _, window in ipairs(row.windows) do
+      label_width = math.max(label_width, widgets.len(window.label))
+    end
   end
   label_width = math.min(label_width, QUOTA_LABEL_MAX)
-  local beside = inner - #INDENT - label_width - 1 - 1 - QUOTA_NUMBER - QUOTA_RESET
-  local one_line = beside >= QUOTA_BAR_MIN
-  -- Narrow, every column counts toward a window's label: rows under the name
-  -- sit one column in rather than two, and the reset is one column closer.
-  local sub = one_line and INDENT .. INDENT or INDENT .. " "
-  local gap = one_line and "  " or " "
-  local reset_width = QUOTA_RESET - 2 + #gap
-  local gauge_at = one_line and (#INDENT + label_width + 1) or #sub
-  local show_reset = inner - gauge_at >= QUOTA_NUMBER + reset_width
-  local bar = inner - gauge_at - 1 - QUOTA_NUMBER - (show_reset and reset_width or 0)
-  bar = bar >= QUOTA_BAR_MIN and math.min(bar, QUOTA_BAR_MAX) or 0
-  -- Where every number ends, and what the gauge slot holds in its place.
-  local number_end = gauge_at + (bar > 0 and bar + 1 or 0) + QUOTA_NUMBER
-  local slot = number_end - gauge_at + (show_reset and reset_width or 0)
+  local bar = inner - #QUOTA_SUB - label_width - 1 - QUOTA_NUMBER - 1 - QUOTA_RESET
+  local one_line = bar >= QUOTA_BAR_MIN
+  if not one_line then
+    bar = inner - #QUOTA_SUB - 1 - QUOTA_NUMBER
+  end
+  bar = math.max(1, math.min(bar, QUOTA_BAR_MAX))
+  local gauge_at = #QUOTA_SUB + (one_line and label_width + 1 or 0)
+  local number_end = gauge_at + bar + 1 + QUOTA_NUMBER
+  -- The right edge every note and reset is pushed to.
+  local edge = one_line and number_end + QUOTA_RESET or number_end
 
   for _, row in ipairs(reading.rows) do
-    local label = account_label(row)
-    local spans = { { text = INDENT } }
-    local label_style = { fg = theme.text, bold = true }
-    if one_line then
-      spans[#spans + 1] = {
-        text = widgets.pad(widgets.truncate(label, label_width), label_width) .. " ",
-        style = label_style,
-      }
-    else
-      -- The gauge below has no label of its own, so the name line says which
-      -- window it is, when that fits whole beside the name.
-      label = widgets.truncate(label, inner - #INDENT)
-      spans[#spans + 1] = { text = label, style = label_style }
-      local which = headline(row) and headline(row).label
-      local gap = which and inner - #INDENT - widgets.len(label) - widgets.len(which)
-      if gap and gap >= 2 then
-        spans[#spans + 1] = {
-          text = string.rep(" ", gap) .. which,
-          style = { fg = theme.accent, bold = true },
+    -- The name line, with what is wrong with the subscription as a whole.
+    local note
+    if row.status ~= "fresh" then
+      note = row.status
+    elseif #row.bindings == 0 then
+      note = "binding unavailable"
+    end
+    local name = widgets.truncate(account_label(row), math.max(1, inner - #INDENT))
+    local note_style = { fg = row.status == "fresh" and theme.muted or theme.warn }
+    local name_line = { { text = INDENT .. name, style = { fg = theme.text, bold = true } } }
+    if note and #INDENT + widgets.len(name) + 1 + widgets.len(note) > math.min(edge, inner) then
+      -- No room beside the name: the note gets its own line under it.
+      rows[#rows + 1] = with_note(name_line, nil, nil, inner)
+      name_line = { { text = QUOTA_SUB } }
+      note = widgets.truncate(note, math.max(1, inner - #QUOTA_SUB))
+      name_line[2] = { text = note, style = note_style }
+      note = nil
+    end
+    rows[#rows + 1] = with_note(name_line, note, note_style, math.min(edge, inner))
+
+    -- Every window of a fresh reading, at every width and in its own order,
+    -- the binding ones in the accent: the one that does not bind today is the
+    -- one that binds tomorrow.
+    for _, window in ipairs(row.status == "fresh" and row.windows or {}) do
+      local label_style = window.binding and { fg = theme.accent, bold = true }
+        or { fg = theme.muted }
+      local reset = reset_text(window, now)
+      local gauge = { { text = QUOTA_SUB } }
+      if one_line then
+        gauge[2] = {
+          text = widgets.pad(widgets.truncate(window.label, label_width), label_width) .. " ",
+          style = label_style,
+        }
+      else
+        local head = { { text = QUOTA_SUB } }
+        local room = math.max(1, edge - #QUOTA_SUB - (reset and widgets.len(reset) + 1 or 0))
+        if reset and room < 4 then
+          reset, room = nil, math.max(1, edge - #QUOTA_SUB)
+        end
+        head[2] = { text = widgets.truncate(window.label, room), style = label_style }
+        rows[#rows + 1] = with_note(head, reset, { fg = theme.muted }, edge)
+      end
+      if window.remaining then
+        gauge_spans(gauge, window.remaining, bar)
+      else
+        gauge[#gauge + 1] = {
+          text = widgets.truncate(window.status, math.max(1, edge - gauge_at)),
+          style = { fg = theme.warn },
         }
       end
-      rows[#rows + 1] = { type = "text", len = 1, text = { spans } }
-      spans = { { text = sub } }
-    end
-
-    local top = headline(row)
-    local word
-    if row.status ~= "fresh" then
-      word = row.status
-    elseif #row.bindings == 0 then
-      word = "binding unavailable"
-    elseif not top then
-      word = "unavailable"
-    end
-    if top then
-      if bar > 0 then
-        for _, span in ipairs(quota_bar(top.remaining, bar)) do
-          spans[#spans + 1] = span
-        end
-        spans[#spans + 1] = { text = " " }
+      if one_line and reset and window.remaining then
+        gauge[#gauge + 1] = { text = "  " .. reset, style = { fg = theme.muted } }
       end
-      spans[#spans + 1] = {
-        text = quota_number(top.remaining),
-        style = { fg = quota_tone(top.remaining), bold = true },
-      }
-      if show_reset then
-        reset_spans(spans, top, now, gap)
-      end
-    else
-      spans[#spans + 1] = {
-        text = widgets.truncate(word, slot),
-        style = { fg = row.status == "fresh" and theme.muted or theme.warn },
-      }
-    end
-    rows[#rows + 1] = { type = "text", len = 1, text = { spans } }
-
-    -- Every window under a fresh reading, at every width and in the reading's
-    -- order, the binding ones in the accent: a 5h window that does not bind
-    -- today is the one that binds tomorrow.
-    for _, window in ipairs(row.status == "fresh" and row.windows or {}) do
-      -- A window with no number says why in the number's place, spilling into
-      -- the reset column rather than into its label.
-      local number = window.remaining and quota_number(window.remaining)
-        or widgets.truncate(window.status, slot - (number_end - gauge_at - QUOTA_NUMBER))
-      local room = math.max(1, number_end - QUOTA_NUMBER - #sub - 1)
-      local detail = {
-        { text = sub },
-        {
-          text = widgets.pad(widgets.truncate(window.label, room), room) .. " ",
-          style = window.binding and { fg = theme.accent, bold = true } or { fg = theme.muted },
-        },
-        {
-          text = number,
-          style = window.remaining and { fg = quota_tone(window.remaining), bold = true }
-            or { fg = theme.warn },
-        },
-      }
-      if show_reset and window.remaining then
-        reset_spans(detail, window, now, gap)
-      end
-      rows[#rows + 1] = { type = "text", len = 1, text = { clip(detail, inner) } }
+      rows[#rows + 1] = { type = "text", len = 1, text = { clip(gauge, inner) } }
     end
   end
 end
@@ -1042,16 +1008,18 @@ local function push_automations(rows, automations, width)
     -- the pair says whether this will fire, and a cut schedule says nothing.
     local room = inner_width(width) - #INDENT
     local schedule = widgets.len(entry.schedule or "")
+    local tail = outcome and 2 + widgets.len(outcome) or 0
     local spans = {
       {
-        text = widgets.truncate(entry.name or "?", math.max(8, room - 2 - schedule)),
+        text = widgets.truncate(entry.name or "?", math.max(8, room - 2 - schedule - tail)),
         style = { fg = theme.secondary },
       },
-      { text = "  " .. (entry.schedule or ""), style = { fg = theme.muted } },
     }
+    -- The outcome before the schedule: when only one fits, it is the news.
     if outcome then
       spans[#spans + 1] = { text = "  " .. outcome, style = style }
     end
+    spans[#spans + 1] = { text = "  " .. (entry.schedule or ""), style = { fg = theme.muted } }
     rows[#rows + 1] = plain_row(spans, width)
   end
   if #live > AUTOMATION_ROWS then
