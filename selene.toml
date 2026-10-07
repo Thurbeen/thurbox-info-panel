@@ -14,7 +14,7 @@ std = "thurbox"
 # worse, train the reader to ignore this file's output. It has its own config:
 #
 #     selene dev --config dev/selene.toml
-exclude = ["dev/*.lua"]
+exclude = ["dev/*.lua", "tests/*.lua", ".cache/**"]
 
 [lints]
 # A plugin is one file returning one table; the kernel calls its fields.

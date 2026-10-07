@@ -36,6 +36,30 @@ if not UI then
 end
 package.path = UI .. "/?.lua;" .. package.path
 
+text = {
+  width = function(s)
+    return utf8.len(s)
+  end,
+  truncate = function(s, n, opts)
+    local chars = {}
+    for _, c in utf8.codes(s) do
+      chars[#chars + 1] = utf8.char(c)
+    end
+    if #chars <= n then
+      return s
+    end
+    local tail = type(opts) == "string" and opts or type(opts) == "table" and opts.ellipsis or "…"
+    return table.concat(chars, "", 1, math.max(0, n - utf8.len(tail))) .. tail
+  end,
+  pad = function(s, n)
+    return s .. string.rep(" ", math.max(0, n - utf8.len(s)))
+  end,
+}
+
+package.preload["thurbox-info-panel.lib.quota"] = function()
+  return dofile("lib/quota.lua")
+end
+
 local SESSION = "s1-0000-0000-0000-000000000000"
 
 -- The globals the kernel injects. Only the fields this pane reads are here; the
@@ -173,14 +197,14 @@ local function flatten(node, out)
     return out
   end
   if node.type == "text" then
-    local text = node.text
-    if type(text) == "string" then
-      out[#out + 1] = text
-    elseif type(text) == "table" then
-      if text.text ~= nil then
-        out[#out + 1] = tostring(text.text)
+    local node_text = node.text
+    if type(node_text) == "string" then
+      out[#out + 1] = node_text
+    elseif type(node_text) == "table" then
+      if node_text.text ~= nil then
+        out[#out + 1] = tostring(node_text.text)
       else
-        for _, line in ipairs(text) do
+        for _, line in ipairs(node_text) do
           if type(line) == "string" then
             out[#out + 1] = line
           elseif line.text ~= nil then

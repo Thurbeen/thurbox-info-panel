@@ -1,0 +1,15 @@
+name = "info-panel-refresh"
+description = "Refresh the info panel's local account quotas once a minute"
+config_version = 1
+version = "0.2.0"
+min_thurbox_version = "2.51.7"
+home = "~/.config/thurbox/info-panel-refresh"
+
+[[files]]
+path = "refresh.mjs"
+source = "extension/refresh.mjs"
+
+[[automations]]
+name = "info-panel-quota-refresh"
+trigger = "cron:* * * * *"
+command = 'node "{home}/refresh.mjs"'

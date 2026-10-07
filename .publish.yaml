@@ -1,0 +1,12 @@
+version: 1
+forge: github
+base: main
+review:
+  rules:
+    - README.md
+gate:
+  - name: check
+    run: bash scripts/check.sh
+ci:
+  required: true
+  timeout: 30m
