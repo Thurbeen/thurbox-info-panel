@@ -16,6 +16,9 @@ assert(model.rows[1].windows[2].binding == true)
 assert(model.rows[1].windows[3].remaining == 90 and not model.rows[1].windows[3].binding)
 assert(model.rows[1].windows[2].remaining == 60 and model.rows[2].windows[2].remaining == 25)
 assert(model.rows[1].bindings[1].reset == "2026-10-12T12:00:00Z")
+-- The instants the display counts down to and ages from, as epoch seconds.
+assert(model.rows[1].bindings[1].resets_at == 1791806400)
+assert(model.generated_at == now)
 assert(q.parse(response, now + 301).rows[1].status == "stale")
 assert(
   q.parse({ state = "done", status = 0, stdout = response.stdout, truncated = true }, now).status

@@ -292,6 +292,7 @@ function quota.parse(answer, now, timeout)
           label = label,
           remaining = known and percent or nil,
           reset = reset,
+          resets_at = epoch(w.resetsAt),
           binding = limiting[w.id] == true,
           status = known and "fresh" or (status == "fresh" and "unavailable" or status),
         }
@@ -309,6 +310,6 @@ function quota.parse(answer, now, timeout)
       }
     end
   end
-  return { status = "ready", rows = rows }
+  return { status = "ready", rows = rows, generated_at = at }
 end
 return quota

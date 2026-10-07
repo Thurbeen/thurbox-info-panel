@@ -1,0 +1,13 @@
+  Quota left          3m ago
+  claude · personal     week
+    ┃████░░░  60%  ↻ 1d 5h
+  claude · work   5h session
+    ┃░░░░░░░  12%  ↻ 45m
+  codex
+    binding unavailable
+    session   33%  ↻ <1m
+    week      45%
+  agy
+    stale
+  grok
+    unavailable

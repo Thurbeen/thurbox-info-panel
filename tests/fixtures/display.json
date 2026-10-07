@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 6,
+  "generatedAt": "2026-10-07T11:57:00Z",
+  "providers": [
+    {
+      "provider": "claude",
+      "accountKey": "personal",
+      "windows": [
+        { "id": "session", "label": "5h session", "percentRemaining": 80, "resetsAt": "2026-10-07T15:00:00Z" },
+        { "id": "weekly", "label": "week", "percentRemaining": 60, "resetsAt": "2026-10-08T17:30:00Z" },
+        { "id": "opus_week", "label": "Opus model week", "percentRemaining": 90, "resetsAt": "2026-10-13T09:30:00Z" }
+      ],
+      "state": { "status": "fresh" },
+      "quotaSemantics": {
+        "effectiveAvailability": [
+          { "scope": "all_models", "status": "known", "boundedBy": ["session", "weekly"], "limitingWindowIds": ["weekly"] }
+        ]
+      }
+    },
+    {
+      "provider": "claude",
+      "accountKey": "work",
+      "windows": [
+        { "id": "session", "label": "5h session", "percentRemaining": 12, "resetsAt": "2026-10-07T12:45:00Z" },
+        { "id": "weekly", "label": "week", "percentRemaining": 100, "resetsAt": "2026-10-17T12:00:00Z" }
+      ],
+      "state": { "status": "fresh" },
+      "quotaSemantics": {
+        "effectiveAvailability": [
+          { "scope": "all_models", "status": "known", "boundedBy": ["session", "weekly"], "limitingWindowIds": ["session"] }
+        ]
+      }
+    },
+    {
+      "provider": "codex",
+      "accountKey": "default",
+      "windows": [
+        { "id": "session", "label": "session", "percentRemaining": 33, "resetsAt": "2026-10-07T12:00:30Z" },
+        { "id": "weekly", "label": "week", "percentRemaining": 45 }
+      ],
+      "state": { "status": "fresh" },
+      "quotaSemantics": { "status": "unknown", "effectiveAvailability": [] }
+    },
+    {
+      "provider": "agy",
+      "accountKey": "default",
+      "windows": [
+        { "id": "weekly", "label": "week", "percentRemaining": 75, "resetsAt": "2026-10-12T12:00:00Z" }
+      ],
+      "state": { "status": "stale", "stale": true },
+      "quotaSemantics": { "effectiveAvailability": [] }
+    },
+    {
+      "provider": "grok",
+      "state": { "status": "unavailable" },
+      "windows": []
+    }
+  ]
+}

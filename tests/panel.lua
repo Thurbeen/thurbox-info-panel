@@ -4,6 +4,9 @@ package.path = UI .. "/?.lua;./?.lua;" .. package.path
 package.preload["thurbox-info-panel.lib.quota"] = function()
   return dofile("lib/quota.lua")
 end
+package.preload["thurbox-info-panel.lib.format"] = function()
+  return dofile("lib/format.lua")
+end
 -- These fixtures contain ASCII and single-column bars only.
 text = {
   width = function(s)
@@ -73,7 +76,7 @@ local cases = {
       "60%",
       "25%",
       "week",
-      "2026-10-12",
+      "↻ 5d",
       "unavailable",
       "█",
     },
@@ -81,7 +84,8 @@ local cases = {
   {
     name = "partial",
     answer = { state = "done", status = 0, stdout = read("tests/fixtures/partial.json") },
-    want = { "80%", "unavailable", "binding unavailable", "Opus model week" },
+    want = { "80%", "unavailable", "binding unavailable", "Opus" },
+    wide = { "Opus model week" },
     absent = "60%",
   },
   {
@@ -158,7 +162,7 @@ local function highlighted(node)
   for _, line in ipairs(type(node.text) == "table" and node.text or {}) do
     for _, span in ipairs(line) do
       if
-        (span.text or ""):find("* week", 1, true)
+        (span.text or ""):find("week", 1, true)
         and span.style
         and span.style.bold
         and span.style.fg == "accent"
@@ -232,22 +236,29 @@ for _, case in ipairs(cases) do
           contains(s, "Opus week")
           contains(s, "80%")
           contains(s, "90%")
-          contains(s, "2026-10-13")
-          local column
-          for line in s:gmatch("[^\n]+") do
-            local at = line:find("█", 1, true)
-            if at then
-              assert(not column or at == column, "window bars must align across subscriptions")
-              column = at
-            end
-          end
+          contains(s, "↻ 5d 21h")
         else
           assert(not s:find("Opus week", 1, true), "compact must collapse nonbinding windows")
-          assert(not s:find("2026-10-07 15:00", 1, true), "compact must keep binding resets only")
+          assert(not s:find("↻ 3h", 1, true), "compact must keep binding resets only")
         end
-        contains(s, "* week")
-        contains(s, "* binding")
+        -- Every number ends in one column, gauge rows and window rows alike.
+        local column
+        for line in s:gmatch("[^\n]+") do
+          local at = line:find("%d%%")
+          if at then
+            at = utf8.len(line:sub(1, at + 1))
+            assert(not column or at == column, "numbers must align across subscriptions")
+            column = at
+          end
+        end
+      end
+      if case.name == "several" then
         assert(highlighted(tree), "binding label must use theme accent and bold")
+      end
+      if width >= 36 then
+        for _, want in ipairs(case.wide or {}) do
+          contains(s, want)
+        end
       end
       if case.absent then
         assert(not s:find(case.absent, 1, true), "fake quota value")
