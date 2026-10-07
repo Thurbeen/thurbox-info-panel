@@ -32,7 +32,7 @@ layout = root / "ui/layout.lua"
 layout.write_text(layout.read_text().replace('slot = "info", len = 44', f'slot = "info", len = {width}'))
 # Mock only the worker answer. The screen and session/git/system data are real.
 fixture = json.loads((repo / "tests/fixtures/several.json").read_text())
-fixture["providers"] = fixture["providers"][:5]
+fixture["providers"] = fixture["providers"][:4]
 from datetime import datetime, timezone
 fixture["generatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 answer = json.dumps(fixture)

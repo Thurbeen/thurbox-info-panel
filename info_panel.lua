@@ -739,31 +739,59 @@ local function push_quota(rows, width)
   if #reading.rows == 0 then
     rows[#rows + 1] = field("", "no configured providers", { fg = theme.muted }, width)
   end
+  rows[#rows + 1] = quota_field("% left · * binding", { fg = theme.muted }, width)
   for _, row in ipairs(reading.rows) do
-    local title = row.provider .. " · " .. row.account
-    if row.scope ~= "all_models" then
-      title = title .. " · " .. row.scope
-    end
-    rows[#rows + 1] = quota_field(title, { fg = theme.accent }, width)
-    if row.remaining then
-      local room = math.max(1, inner_width(width) - #INDENT - 10)
-      local bar = math.min(24, room)
-      local filled = math.floor(row.remaining * bar / 100 + 0.5)
-      rows[#rows + 1] = plain_row({
-        { text = string.rep("█", filled), style = { fg = pressure(1 - row.remaining / 100) } },
-        { text = string.rep("░", bar - filled), style = { fg = theme.muted } },
-        {
-          text = string.format(" %d%% left", math.floor(row.remaining + 0.5)),
-          style = { fg = theme.text },
-        },
-      }, width)
-      for _, binding in ipairs(row.bindings) do
-        rows[#rows + 1] = quota_field("binding: " .. binding.label, { fg = theme.muted }, width)
-        rows[#rows + 1] =
-          quota_field("reset: " .. (binding.reset or "unavailable"), { fg = theme.muted }, width)
-      end
-    else
+    rows[#rows + 1] =
+      quota_field(row.provider .. " · " .. row.account, { fg = theme.accent }, width)
+    -- Without authoritative binding metadata, keep all windows even when narrow.
+    local windows = compact(width) and #row.bindings > 0 and row.bindings or row.windows
+    if #windows == 0 then
       rows[#rows + 1] = quota_field(row.status, { fg = theme.warn }, width)
+    elseif #row.bindings == 0 then
+      rows[#rows + 1] = quota_field("binding unavailable", { fg = theme.muted }, width)
+    end
+    local label_width = 12
+    for _, window in ipairs(windows) do
+      local label = (window.binding and "* " or "  ") .. window.label
+      local style = { fg = window.binding and theme.accent or theme.muted, bold = window.binding }
+      local spans = {}
+      local room = inner_width(width) - #INDENT - 5
+      if compact(width) then
+        rows[#rows + 1] = quota_field(label, style, width)
+      else
+        if widgets.len(label) > label_width then
+          rows[#rows + 1] = quota_field(label, style, width)
+          label = ""
+        end
+        spans[#spans + 1] = {
+          text = widgets.pad(widgets.truncate(label, label_width), label_width) .. " ",
+          style = style,
+        }
+        room = room - label_width - 1
+      end
+      if window.remaining ~= nil then
+        local bar = math.max(1, math.min(16, room))
+        local filled = math.floor(window.remaining * bar / 100 + 0.5)
+        spans[#spans + 1] = {
+          text = string.rep("█", filled),
+          style = { fg = pressure(1 - window.remaining / 100) },
+        }
+        spans[#spans + 1] = { text = string.rep("░", bar - filled), style = { fg = theme.muted } }
+        spans[#spans + 1] = {
+          text = string.format(" %3d%%", math.floor(window.remaining + 0.5)),
+          style = { fg = theme.text },
+        }
+      else
+        spans[#spans + 1] = { text = window.status, style = { fg = theme.warn } }
+      end
+      rows[#rows + 1] = plain_row(spans, width)
+      local reset = window.reset or "unavailable"
+      -- UTC minutes fit even a 28-column pane; preserve other reset formats verbatim.
+      local date, time = reset:match("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d):%d%d[^Z]*Z$")
+      if date then
+        reset = date .. " " .. time .. "Z"
+      end
+      rows[#rows + 1] = quota_field("↳ " .. reset, { fg = theme.muted }, width)
     end
   end
 end

@@ -11,7 +11,7 @@
       "windows": [
         {
           "id": "session",
-          "label": "session",
+          "label": "5h session",
           "kind": "session",
           "percentRemaining": 80,
           "resetsAt": "2026-10-07T15:00:00Z"
@@ -22,6 +22,13 @@
           "kind": "weekly",
           "percentRemaining": 60,
           "resetsAt": "2026-10-12T12:00:00Z"
+        },
+        {
+          "id": "opus_week",
+          "label": "Opus week",
+          "kind": "weekly",
+          "percentRemaining": 90,
+          "resetsAt": "2026-10-13T09:30:00Z"
         }
       ],
       "state": {
@@ -42,6 +49,19 @@
             "limitingWindowIds": [
               "weekly"
             ]
+          },
+          {
+            "scope": "opus",
+            "status": "known",
+            "effectivePercentRemaining": 60,
+            "boundedBy": [
+              "session",
+              "weekly",
+              "opus_week"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
           }
         ]
       }
@@ -55,7 +75,7 @@
       "windows": [
         {
           "id": "session",
-          "label": "session",
+          "label": "5h session",
           "kind": "session",
           "percentRemaining": 80,
           "resetsAt": "2026-10-07T15:00:00Z"
@@ -66,6 +86,13 @@
           "kind": "weekly",
           "percentRemaining": 25,
           "resetsAt": "2026-10-12T12:00:00Z"
+        },
+        {
+          "id": "opus_week",
+          "label": "Opus week",
+          "kind": "weekly",
+          "percentRemaining": 90,
+          "resetsAt": "2026-10-13T09:30:00Z"
         }
       ],
       "state": {
@@ -86,6 +113,19 @@
             "limitingWindowIds": [
               "weekly"
             ]
+          },
+          {
+            "scope": "opus",
+            "status": "known",
+            "effectivePercentRemaining": 25,
+            "boundedBy": [
+              "session",
+              "weekly",
+              "opus_week"
+            ],
+            "limitingWindowIds": [
+              "weekly"
+            ]
           }
         ]
       }
@@ -99,7 +139,7 @@
       "windows": [
         {
           "id": "session",
-          "label": "session",
+          "label": "5h session",
           "kind": "session",
           "percentRemaining": 80,
           "resetsAt": "2026-10-07T15:00:00Z"
@@ -142,18 +182,11 @@
       ],
       "windows": [
         {
-          "id": "session",
-          "label": "session",
-          "kind": "session",
-          "percentRemaining": 80,
-          "resetsAt": "2026-10-07T15:00:00Z"
-        },
-        {
-          "id": "weekly",
-          "label": "week",
-          "kind": "weekly",
+          "id": "monthly",
+          "label": "month",
+          "kind": "monthly",
           "percentRemaining": 70,
-          "resetsAt": "2026-10-12T12:00:00Z"
+          "resetsAt": "2026-11-01T00:00:00Z"
         }
       ],
       "state": {
@@ -168,11 +201,10 @@
             "status": "known",
             "effectivePercentRemaining": 70,
             "boundedBy": [
-              "session",
-              "weekly"
+              "monthly"
             ],
             "limitingWindowIds": [
-              "weekly"
+              "monthly"
             ]
           }
         ]
