@@ -63,22 +63,29 @@ No polling, process launch or network access happens in `render`. Requests have 
 result state change, or the snapshot crosses a minute boundary. The kernel
 caches the pure render between changes.
 
-Each configured provider/account is labelled separately, including multiple
-accounts of one provider. The panel reads quota-axi's schema 5/6
-`quotaSemantics.effectiveAvailability`, preserving every scope and its reported
-binding windows. Each measured scope shows remaining percent, a bar, the binding
-window and its reset timestamp (UTC). Tied binding windows each retain their own
-reset. No providers, accounts or model scopes are summed together.
+Each configured subscription/account is labelled separately, including multiple
+accounts of one provider. Every reported window gets its own labelled bar,
+remaining percentage and reset time (UTC): session, week and any model-specific
+week stay separate. Bold accent labels marked `*` identify binding windows from
+quota-axi's schema 5/6 `quotaSemantics.effectiveAvailability`. Tied and model-scope
+bindings are preserved. No providers, accounts or windows are summed together.
+
+At 36 columns or wider, aligned labels and percentages show all windows. Narrower
+columns collapse to the binding windows per subscription, keeping each reset.
+Without authoritative binding metadata, all windows remain visible and the panel
+says **binding unavailable**. Gauge colours use the active theme's good, warning
+and danger roles: remaining above 40%, above 15% through 40%, and 15% or less.
 
 Claude, Codex, Cursor, Copilot, Z.AI, Antigravity and other discovered providers
-use the same path. Gemini model scopes are shown when quota-axi reports them
+use the same path. Gemini model windows are shown when quota-axi reports them
 through Antigravity; the panel does not invent a standalone Gemini adapter.
-Providers positively marked `notSetUp` are omitted. Unknown semantics, an
-unmeasurable scope, a failed fetch, stale data or an unsupported schema show a
-word instead of a fake zero or a bar. Cached reports older than five minutes
-relative to the snapshot are also marked stale. Raw errors and account emails
-are not displayed. Quotas describe **local accounts**, even when the selected
-session runs on a remote host.
+Providers positively marked `notSetUp` are omitted. Each window uses only its own
+measured `percentRemaining`; missing or untrusted readings show **unavailable**,
+and stale readings show **stale**, without a number or bar. A failed fetch or an
+unsupported schema also shows a word. Cached reports older than five minutes
+relative to the snapshot are marked stale. Raw errors and account emails are not
+displayed. Quotas describe **local accounts**, even when the selected session
+runs on a remote host.
 
 Remove the scheduler with `thurbox-cli extension uninstall info-panel-refresh`;
 remove the pane with `thurbox-cli plugin remove info_panel` and remove the layout
@@ -110,8 +117,9 @@ The gate bootstraps an isolated release interface under `.cache/`, runs StyLua,
 Selene and rumdl, renders fixtures at wide/compact widths, sweeps the preview
 scenarios and drives a real TUI with tmux. It needs Python 3, Node.js, Lua 5.4 or later,
 Thurbox and those tools on PATH. Tests never grant a capability or change the
-live interface. JSON fixtures cover several providers, two accounts, unavailable
-and stale readings; render tests cover 28, 44 and 80 columns and forbid worker
+live interface. JSON fixtures cover several providers, two accounts, individual
+session/weekly/model windows,
+unavailable, untrusted and stale readings; render tests cover 28, 44 and 80 columns and forbid worker
 requests from drawing. Native Windows CI installs and checks the same plugin.
 
 `thurbox.yml` is the release sandbox contract. Host scripts use
@@ -131,8 +139,10 @@ agree. This change does not publish a release.
 Install the PR revision in a disposable interface, place the column as above,
 and run `thurbox-cli plugin check`. Open Thurbox, press F2 and grant run in the
 Interface tab. With quota-axi on PATH, use the refresh palette command: each
-configured account should show a separate bar, binding window and reset, or an
-honest status word. Install the companion extension and leave the interface idle
+configured account should show all of its window bars and resets at 44 columns,
+with binding labels highlighted, or an honest status word. At 28 columns, only
+binding windows should remain when the binding metadata is available. Install
+the companion extension and leave the interface idle
 across a minute boundary; its quota answer should refresh without switching
 sessions. Hide Info with F2 and show it again. Resize the column to 28 and 44
 columns and select a light and a dark theme in Settings: labels, bars and borders
