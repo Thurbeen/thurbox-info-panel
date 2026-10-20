@@ -2,12 +2,13 @@
 local quota = require("thurbox-info-panel.lib.quota")
 local hosts = {}
 local PAGE_SIZE = 3
+local KEY_PREFIX = "quota.host:"
 local MAX_OUTPUT = 131072
 local MAX_ROWS, MAX_WINDOWS = 32, 32
 
 -- A distinct stable namespace from the existing local `quota` answer.
 function hosts.key(name)
-  return "quota.host:" .. name
+  return KEY_PREFIX .. name
 end
 
 -- Reject oversized or deeply nested output before invoking the JSON decoder.
@@ -70,15 +71,28 @@ function hosts.new()
   local model = { cache = {}, desired = {} }
   -- Call from a handler, never render. The adapter supplies the verified core
   -- run_forget capability; this model does not execute or cancel any command.
-  function model:reconcile(configured, forget)
+  function model:reconcile(configured, forget, answers)
     local desired = {}
     for _, host in ipairs(configured) do
       desired[hosts.key(host.name)] = true
     end
-    for key in pairs(self.desired) do
-      if not desired[key] then
+    local retired = {}
+    local function retire(key)
+      if not desired[key] and not retired[key] then
         forget(key)
         self.cache[key] = nil
+        retired[key] = true
+      end
+    end
+    for key in pairs(self.desired) do
+      retire(key)
+    end
+    -- The kernel can retain this plugin's answers across a Lua VM rebuild.
+    -- Recover retired host keys from its owned snapshot, including pending
+    -- asks, without touching the local quota or other command namespaces.
+    for key in pairs(answers or {}) do
+      if type(key) == "string" and key:sub(1, #KEY_PREFIX) == KEY_PREFIX then
+        retire(key)
       end
     end
     self.desired = desired

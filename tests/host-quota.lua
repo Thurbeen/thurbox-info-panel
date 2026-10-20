@@ -119,3 +119,46 @@ lifecycle:reconcile({ { name = "replacement" } }, function()
   error("a retired key survived empty reconciliation")
 end)
 print("Host key reconciliation passed: repeated churn, retirement and bounded desired state")
+
+-- VM rebuilds lose the private desired map while the surviving plugin path
+-- can still own answers/queued asks in the kernel snapshot.
+local snapshot = {
+  quota = { state = "done", status = 0 },
+  unrelated = { state = "pending" },
+  [host_quota.key("keep")] = { state = "done", status = 0 },
+  [host_quota.key("retired-done")] = { state = "done", status = 0 },
+  [host_quota.key("retired-failed")] = { state = "failed", error = "offline" },
+  [host_quota.key("retired-pending")] = { state = "pending" },
+  [host_quota.key("retired-queued")] = { state = "pending" },
+}
+local after_reset = host_quota.new()
+local retired_count = 0
+local function retire_snapshot(key)
+  assert(snapshot[key], "forgot a key twice during snapshot reconciliation")
+  snapshot[key] = nil
+  retired_count = retired_count + 1
+end
+after_reset:reconcile({ { name = "keep" } }, retire_snapshot, snapshot)
+assert(retired_count == 4, "VM reset leaked obsolete cached/pending/queued host keys")
+assert(snapshot.quota and snapshot.unrelated, "host cleanup removed another pane command")
+assert(snapshot[host_quota.key("keep")], "host cleanup removed a desired answer")
+after_reset:reconcile({ { name = "keep" } }, retire_snapshot, snapshot)
+assert(retired_count == 4, "repeated snapshot reconciliation was not idempotent")
+-- A key may exist in both private state and the published snapshot.
+after_reset:reconcile({}, retire_snapshot, snapshot)
+assert(retired_count == 5, "private and snapshot keys were not deduplicated")
+for i = 1, 500 do
+  snapshot[host_quota.key("obsolete-" .. i)] = { state = "pending" }
+  after_reset = host_quota.new()
+  after_reset:reconcile({}, retire_snapshot, snapshot)
+  assert(next(after_reset.desired) == nil, "reset retained a history of retired keys")
+end
+assert(retired_count == 505 and snapshot.quota and snapshot.unrelated)
+local remaining = 0
+for _ in pairs(snapshot) do
+  remaining = remaining + 1
+end
+assert(remaining == 2, "repeated reloads grew retained own snapshot keys")
+print(
+  "Host reload reconciliation passed: surviving snapshot, obsolete keys and repeated state loss"
+)
