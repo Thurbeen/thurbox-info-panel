@@ -1,0 +1,121 @@
+-- Host data is consumed independently of session selection and transport.
+package.preload["thurbox-info-panel.lib.quota"] = function()
+  return dofile("lib/quota.lua")
+end
+local host_quota = dofile("lib/host_quota.lua")
+local f = assert(io.open("tests/fixtures/several.json"))
+local report = f:read("a")
+f:close()
+local function answer(stdout)
+  return { state = "done", status = 0, stdout = stdout }
+end
+local model = host_quota.new()
+local hosts = {
+  { name = "alpha", platform = "posix" },
+  { name = "beta", platform = "windows" },
+  { name = "offline", platform = "posix" },
+}
+local runs = {
+  [host_quota.key("alpha")] = answer(report),
+  [host_quota.key("beta")] = answer("{broken"),
+  [host_quota.key("offline")] = { state = "done", timed_out = true, status = 1 },
+}
+local now = 1791374400
+local groups = model:read(hosts, runs, now, true, 1)
+assert(#groups == 3)
+assert(groups[1].reading.status == "ready", "healthy host must survive peer failures")
+assert(groups[2].reading.status == "unavailable", "malformed report is unknown, not zero")
+assert(groups[3].reading.reason:find("timed out", 1, true))
+local accounts, windows = {}, {}
+for _, row in ipairs(groups[1].reading.rows) do
+  accounts[row.provider .. ":" .. row.account] = true
+  for _, window in ipairs(row.windows) do
+    windows[window.label] = true
+  end
+end
+assert(accounts["claude:personal"] and accounts["claude:work"])
+assert(windows["5h session"] and windows["Opus week"])
+assert(model:read(hosts, {}, now, true, 1)[1].reading.status == "loading")
+assert(model:read(hosts, runs, now, false, 1)[1].reading.status == "untrusted")
+runs[host_quota.key("beta")] = { state = "done", status = 127 }
+assert(model:read(hosts, runs, now, true, 1)[2].reading.status == "missing")
+local stale = model:read(hosts, runs, now + 3600, true, 1)[1].reading
+for _, row in ipairs(stale.rows) do
+  assert(row.status == "stale")
+  for _, window in ipairs(row.windows) do
+    assert(window.remaining == nil, "stale is never fresh capacity")
+  end
+end
+runs[host_quota.key("alpha")] = answer(string.rep(" ", 131073))
+assert(model:read(hosts, runs, now, true, 1)[1].reading.status == "unavailable")
+runs[host_quota.key("alpha")] = answer(string.rep("[", 2000) .. string.rep("]", 2000))
+assert(model:read(hosts, runs, now, true, 1)[1].reading.status == "unavailable")
+-- Reports that exceed render budgets are rejected as a whole, never pooled
+-- or silently shortened into a misleading subset of accounts/windows.
+local provider = '{"provider":"codex","state":{"status":"fresh"},"windows":[]}'
+local many = '{"schemaVersion":6,"generatedAt":"2026-10-07T12:00:00Z","providers":['
+  .. string.rep(provider .. ",", 32)
+  .. provider
+  .. "]}"
+runs[host_quota.key("alpha")] = answer(many)
+assert(model:read(hosts, runs, now, true, 1)[1].reading.reason == "too many quota accounts")
+local window = '{"label":"week","percentRemaining":50}'
+local many_windows = '{"schemaVersion":6,"generatedAt":"2026-10-07T12:00:00Z","providers":['
+  .. '{"provider":"codex","state":{"status":"fresh"},"windows":['
+  .. string.rep(window .. ",", 32)
+  .. window
+  .. "]}]}"
+runs[host_quota.key("alpha")] = answer(many_windows)
+assert(model:read(hosts, runs, now, true, 1)[1].reading.reason == "too many quota windows")
+-- Churn and pagination must not retain a report/history per past host.
+for i = 1, 500 do
+  hosts[i] = { name = "host-" .. i }
+end
+local page = model:read(hosts, {}, now, true, 10000)
+assert(#page <= 3, "only one bounded host page is materialized")
+collectgarbage("collect")
+local baseline = collectgarbage("count")
+for i = 1, 1000 do
+  model:read({ { name = "replaced-" .. i } }, {}, now, true, 1)
+end
+collectgarbage("collect")
+assert(collectgarbage("count") < baseline + 64, "host churn retained plugin memory")
+assert(#model:read({}, runs, now, true, 1) == 0, "removed hosts must discard obsolete readings")
+print("Host quota fixtures passed: identity, failures, stale data, pages, memory")
+
+-- Handler-side reconciliation retires only removed host keys. A quota report
+-- already carries every provider/account, so there are no per-refresh keys.
+local lifecycle = host_quota.new()
+local retained, forgotten = {}, 0
+local function forget(key)
+  assert(retained[key], "retired the same key more than once")
+  retained[key] = nil
+  forgotten = forgotten + 1
+end
+for i = 1, 2000 do
+  local configured = { { name = "persistent" }, { name = "rotating-" .. i } }
+  lifecycle:reconcile(configured, forget)
+  for _, host in ipairs(configured) do
+    retained[host_quota.key(host.name)] = true
+  end
+  -- Re-reading the same set must not retire anything or create a history.
+  lifecycle:reconcile(configured, forget)
+  local count = 0
+  for _ in pairs(retained) do
+    count = count + 1
+  end
+  assert(count == 2, "retained state grew beyond configured hosts")
+  local desired_count = 0
+  for _ in pairs(lifecycle.desired) do
+    desired_count = desired_count + 1
+  end
+  assert(desired_count == 2, "consumer retained a retired host key")
+end
+lifecycle:reconcile({}, forget)
+assert(next(retained) == nil and forgotten == 2001)
+lifecycle:reconcile({}, forget)
+-- A different plugin's keyspace is not passed to the forgetting callback.
+lifecycle:reconcile({ { name = "replacement" } }, function()
+  error("a retired key survived empty reconciliation")
+end)
+print("Host key reconciliation passed: repeated churn, retirement and bounded desired state")

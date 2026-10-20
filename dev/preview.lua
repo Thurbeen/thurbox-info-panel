@@ -1,3 +1,4 @@
+state = {}
 -- Render the pane outside thurbox, against a fabricated snapshot.
 --
 -- WHY THIS EXISTS. A pane can only fail at runtime. `selene` checks the sandbox

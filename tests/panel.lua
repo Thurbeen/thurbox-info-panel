@@ -1,5 +1,6 @@
 -- Exercise the installed pane against current Thurbox libraries and worker JSON.
 local UI = assert(arg[1], "pass a Thurbox ui/ directory")
+state = {}
 package.path = UI .. "/?.lua;./?.lua;" .. package.path
 package.preload["thurbox-info-panel.lib.quota"] = function()
   return dofile("lib/quota.lua")
@@ -8,6 +9,9 @@ package.preload["thurbox-info-panel.lib.format"] = function()
   return dofile("lib/format.lua")
 end
 -- These fixtures contain ASCII and single-column bars only.
+package.preload["thurbox-info-panel.lib.host_quota"] = function()
+  return dofile("lib/host_quota.lua")
+end
 text = {
   width = function(s)
     local width = 0

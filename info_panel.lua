@@ -20,11 +20,14 @@
 --    rows being drawn were read, which is the right instant to measure from
 --    anyway.
 --
--- It declares no `input` and mutates nothing: like v1's panel it is a readout,
--- so it has no scoped keyboard beyond the one key that brings it forward.
+-- It declares no terminal input. The wheel scrolls the readout; palette actions
+-- page configured quota hosts without changing the selected session.
 
 local format = require("thurbox-info-panel.lib.format")
 local quota = require("thurbox-info-panel.lib.quota")
+local host_quota = require("thurbox-info-panel.lib.host_quota")
+local host_model = host_quota.new()
+local scroll_limit = 0
 local panels = require("lib.panels")
 local theme = require("lib.theme")
 local widgets = require("lib.widgets")
@@ -854,8 +857,8 @@ local function with_note(spans, note, style, edge)
   return { type = "text", len = 1, text = { spans } }
 end
 
-local function push_quota(rows, width)
-  local reading = quota_reading()
+local function push_quota(rows, width, reading, titles)
+  reading = reading or quota_reading()
   local now = math.floor((thurbox.taken_at_ms or 0) / 1000)
   -- The reading's age, only once a refresh that should have landed has not:
   -- inside the TTL and its timeout it is the pane working as designed.
@@ -863,7 +866,7 @@ local function push_quota(rows, width)
   if reading.generated_at and now - reading.generated_at > 90 then
     age = format.duration(now - reading.generated_at) .. " ago"
   end
-  section(rows, { "Quota left · local accounts", "Quota left" }, width, age)
+  section(rows, titles or { "Quota left · local accounts", "Quota left" }, width, age)
   if reading.status ~= "ready" then
     local messages = {
       untrusted = "trust run in Interface settings",
@@ -1127,6 +1130,40 @@ local function body(width)
   end
 
   push_quota(rows, width)
+  -- Snapshot-only rendering. Remote execution is wired only after the core
+  -- host selector is available and verified; absent answers remain pending.
+  local configured = snapshot.hosts or {}
+  local page = math.max(1, math.min(state.quota_page or 1, host_quota.pages(configured)))
+  local groups = host_model:read(
+    configured,
+    snapshot.runs or {},
+    math.floor((snapshot.taken_at_ms or 0) / 1000),
+    run ~= nil,
+    page
+  )
+  for _, group in ipairs(groups) do
+    if run and type(run_forget) ~= "function" then
+      group.reading = { status = "unavailable", reason = "host quota API unavailable", rows = {} }
+    end
+    local label = group.host.name:gsub("%c", " ")
+    push_quota(
+      rows,
+      width,
+      group.reading,
+      { "Quota left · remote · " .. label, "Remote · " .. label, label }
+    )
+  end
+  if host_quota.pages(configured) > 1 then
+    rows[#rows + 1] = quota_field(
+      string.format(
+        "Host page %d/%d · quota next/previous in palette",
+        page,
+        host_quota.pages(configured)
+      ),
+      { fg = theme.muted },
+      width
+    )
+  end
 
   -- The kernel publishes a ZEROED machine table before the first sample rather
   -- than omitting it, so `system ~= nil` is not the question. A total memory of
@@ -1155,7 +1192,11 @@ return {
   on_event = function()
     refresh_quota()
   end,
-  commands = { { action = "info.quota.refresh", desc = "refresh local account quotas" } },
+  commands = {
+    { action = "info.quota.refresh", desc = "refresh local account quotas" },
+    { action = "info.quota.next", desc = "next quota host page" },
+    { action = "info.quota.previous", desc = "previous quota host page" },
+  },
 
   -- Its own COLUMN, and `layout.lua` places it — which is why installing this
   -- needs the three lines README.md gives you. That edit is not an oversight to
@@ -1200,11 +1241,49 @@ return {
   render = function(ctx)
     -- ctx.width is THIS COLUMN's, not the screen's — which is what every width
     -- budget below is measured against.
-    return panel(body(ctx.width or 0))
+    local rows = body(ctx.width or 0)
+    -- Slice lines as well as nodes: a narrow wrapped row can span the viewport.
+    local height = math.max(1, (ctx.height or 80) - BORDERS)
+    local count = 0
+    for _, row in ipairs(rows) do
+      count = count + (row.len or 0)
+    end
+    scroll_limit = math.max(0, count - height)
+    local offset = math.max(0, math.min(state.info_scroll or 0, scroll_limit))
+    local visible, at = {}, 0
+    for _, row in ipairs(rows) do
+      local length = row.len or 0
+      if length > 0 and at + length > offset and at < offset + height then
+        if row.type == "text" and type(row.text) == "table" then
+          local lines = {}
+          for i = math.max(1, offset - at + 1), math.min(length, offset + height - at) do
+            lines[#lines + 1] = row.text[i]
+          end
+          visible[#visible + 1] = { type = "text", len = #lines, text = lines }
+        else
+          visible[#visible + 1] = row
+        end
+      end
+      at = at + length
+    end
+    visible[#visible + 1] = { type = "text", text = "" }
+    return panel(visible)
+  end,
+
+  on_scroll = function(wheel)
+    local offset = math.min(state.info_scroll or 0, scroll_limit)
+    state.info_scroll = math.max(0, math.min(scroll_limit, offset + (wheel.up and -3 or 3)))
+    return true
   end,
 
   on_action = function(action)
-    if action == "info.quota.refresh" then
+    if action == "info.quota.next" or action == "info.quota.previous" then
+      local pages = host_quota.pages(thurbox.hosts or {})
+      local step = action == "info.quota.next" and 1 or -1
+      state.quota_page = ((state.quota_page or 1) - 1 + step) % pages + 1
+      state.info_scroll = 0
+      return true
+    elseif action == "info.quota.refresh" then
       refresh_quota()
       return true
     elseif action == "info.toggle" then
