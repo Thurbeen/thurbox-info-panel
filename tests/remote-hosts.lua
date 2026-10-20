@@ -195,3 +195,91 @@ for _, width in ipairs({ 28, 44, 80 }) do
   assert(pane.pure == true)
 end
 print("Remote quota viewport fixtures passed: narrow scrolling, accounts, failures and stale cache")
+
+-- The real pane must request each configured host through the core selector,
+-- independently of selected/visible sessions, then render each answer identity.
+state = {}
+store = { selected = "remote-session" }
+local configured = {
+  { name = "local", platform = "posix" },
+  { name = "session", platform = "windows" },
+  { name = "offline", platform = "posix" },
+  { name = "pending", platform = "posix" },
+}
+local remote_report = report:gsub('"percentRemaining": 80', '"percentRemaining": 77')
+thurbox = {
+  taken_at_ms = 1791374400000,
+  sessions = {},
+  hosts = configured,
+  runs = { [host_quota.key("retired")] = { state = "pending" } },
+  registry = { settings = {} },
+  theme = { roles = {} },
+  metrics = {},
+  platform = { os = "linux" },
+}
+local requested, order = {}, {}
+run_forget = function(key)
+  order[#order + 1] = "forget:" .. key
+  thurbox.runs[key] = nil
+end
+run = function(key, program, opts)
+  assert(
+    program == "quota-axi --json --no-credential-refresh",
+    "quota refresh may not renew credentials"
+  )
+  assert(opts.session == nil, "machine quotas must not depend on a live session")
+  assert(opts.ttl >= 60 and opts.timeout <= 30)
+  requested[key] = opts.machine
+  order[#order + 1] = "run:" .. key
+  if opts.machine == "local" then
+    thurbox.runs[key] = { state = "done", status = 0, stdout = report }
+  elseif opts.machine == "host:local" or opts.machine == "host:session" then
+    thurbox.runs[key] = { state = "done", status = 0, stdout = remote_report }
+  elseif opts.machine == "host:offline" then
+    thurbox.runs[key] = { state = "failed", error = "fixture host unavailable" }
+  elseif opts.machine == "host:pending" then
+    thurbox.runs[key] = { state = "pending" }
+  else
+    error("unexpected target " .. tostring(opts.machine))
+  end
+end
+local adapter_pane = dofile(PANE)
+adapter_pane.on_action("info.quota.refresh")
+assert(requested.quota == "local", "local quota fetch missing without sessions")
+for _, host in ipairs(configured) do
+  assert(
+    requested[host_quota.key(host.name)] == "host:" .. host.name,
+    "configured host was not fetched"
+  )
+end
+assert(
+  order[1] == "forget:" .. host_quota.key("retired"),
+  "retired snapshot keys must be forgotten before asks"
+)
+local combined = {}
+for _ = 1, 2 do
+  for _ = 1, 100 do
+    local lines = {}
+    flatten(adapter_pane.render({ width = 44, height = 14 }), lines, 44)
+    combined[#combined + 1] = table.concat(lines, "\n")
+    adapter_pane.on_scroll({ up = false })
+  end
+  adapter_pane.on_action("info.quota.next")
+end
+local result = table.concat(combined, "\n"):gsub("%s*\n%s*", " ")
+assert(
+  result:find("77%", 1, true) and result:find("80%", 1, true),
+  "host readings were substituted or pooled"
+)
+assert(result:find("fixture host unavailable", 1, true) and result:find("loading", 1, true))
+-- A VM rebuild loses private state; queued and cached obsolete answers still retire.
+thurbox.hosts = { configured[1] }
+requested, order = {}, {}
+adapter_pane = dofile(PANE)
+adapter_pane.on_event("interface.reloaded")
+assert(not thurbox.runs[host_quota.key("pending")], "reload leaked an obsolete pending host key")
+assert(not thurbox.runs[host_quota.key("session")], "reload leaked an obsolete cached host key")
+assert(requested.quota == "local" and requested[host_quota.key("local")] == "host:local")
+print(
+  "Panel host adapter passed: real selectors, no sessions, distinct readings, reload retirement"
+)

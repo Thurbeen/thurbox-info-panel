@@ -324,7 +324,10 @@ for _, case in ipairs(cases) do
     local asks = 0
     run = not case.untrusted
         and function(key, cmd, opts)
-          assert(key == "quota" and cmd == "quota-axi --json", "portable local command")
+          assert(
+            key == "quota" and cmd == "quota-axi --json --no-credential-refresh",
+            "portable local command"
+          )
           -- Thurbox fails a run with no session before starting it.
           assert(opts.session == "demo", "account quota must run in a local session")
           assert(opts.ttl >= 60 and opts.timeout <= 30)

@@ -162,3 +162,39 @@ assert(remaining == 2, "repeated reloads grew retained own snapshot keys")
 print(
   "Host reload reconciliation passed: surviving snapshot, obsolete keys and repeated state loss"
 )
+
+-- Identical snapshot content may arrive in newly allocated answer tables.
+-- Re-decoding on every refresh defeats the cache even though no data moved.
+local decoder = require("thurbox-info-panel.lib.quota")
+local real_decode, decodes = decoder.decode, 0
+decoder.decode = function(...)
+  decodes = decodes + 1
+  return real_decode(...)
+end
+local snapshots = host_quota.new()
+for _ = 1, 100 do
+  snapshots:read(
+    { { name = "stable" } },
+    { [host_quota.key("stable")] = answer(report) },
+    now,
+    true,
+    1
+  )
+end
+assert(decodes == 1, "identical snapshots repeatedly decoded the same report")
+local mutable = answer(report)
+snapshots:read({ { name = "stable" } }, { [host_quota.key("stable")] = mutable }, now, true, 1)
+mutable.status, mutable.stderr = 1, "credential expired"
+local changed = snapshots:read(
+  { { name = "stable" } },
+  { [host_quota.key("stable")] = mutable },
+  now,
+  true,
+  1
+)
+assert(
+  changed[1].reading.status == "unavailable",
+  "changed answer fields kept a cached fresh reading"
+)
+decoder.decode = real_decode
+print("Host answer cache passed: identical snapshot reuse and changed-result invalidation")

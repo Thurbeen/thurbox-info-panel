@@ -5,6 +5,24 @@ local PAGE_SIZE = 3
 local KEY_PREFIX = "quota.host:"
 local MAX_OUTPUT = 131072
 local MAX_ROWS, MAX_WINDOWS = 32, 32
+local RESULT_FIELDS = { "state", "status", "stdout", "stderr", "error", "timed_out", "truncated" }
+
+local function same_answer(fields, answer)
+  for _, name in ipairs(RESULT_FIELDS) do
+    if fields[name] ~= (answer and answer[name]) then
+      return false
+    end
+  end
+  return true
+end
+
+local function answer_fields(answer)
+  local fields = {}
+  for _, name in ipairs(RESULT_FIELDS) do
+    fields[name] = answer and answer[name]
+  end
+  return fields
+end
 
 -- A distinct stable namespace from the existing local `quota` answer.
 function hosts.key(name)
@@ -110,12 +128,12 @@ function hosts.new()
       else
         local previous = self.cache[key]
         local minute = math.floor(now / 60)
-        if previous and rawequal(previous.answer, answer) and previous.minute == minute then
+        if previous and same_answer(previous.fields, answer) and previous.minute == minute then
           value = previous.reading
         else
           value = reading(answer, now)
         end
-        cache[key] = { answer = answer, minute = minute, reading = value }
+        cache[key] = { fields = answer_fields(answer), minute = minute, reading = value }
       end
       groups[#groups + 1] = { host = host, reading = value }
     end

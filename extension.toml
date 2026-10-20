@@ -1,5 +1,5 @@
 name = "info-panel-refresh"
-description = "Refresh the info panel's local account quotas once a minute"
+description = "Refresh the info panel's account quotas, local and remote, once a minute"
 config_version = 1
 version = "0.2.0"
 min_thurbox_version = "2.51.7"

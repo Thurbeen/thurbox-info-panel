@@ -20,3 +20,8 @@ for scenario in full no-session bare; do
   done
 done
 python3 tests/smoke.py
+# Remote hosts need a core with the host selector, which no release has yet.
+if [ -n "${INFO_PANEL_CORE_BIN:-}" ]; then
+  python3 tests/remote-smoke.py --core-bin-dir "$INFO_PANEL_CORE_BIN" \
+    --evidence-dir .cache/remote-smoke
+fi

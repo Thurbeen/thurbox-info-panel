@@ -707,6 +707,7 @@ end
 -- All requests originate in actions/events, never in the draw path.
 local parsed_stdout, parsed_stderr, parsed_key, parsed_at, parsed
 local QUOTA_TIMEOUT = 30
+local QUOTA_COMMAND = "quota-axi --json --no-credential-refresh"
 
 --- A session on this machine to run quota-axi in: the selected one when it is
 --- local, else the first local one. Thurbox fails a `run` that names no session,
@@ -727,9 +728,29 @@ local function local_session()
 end
 
 local function refresh_quota()
-  local session = local_session()
-  if run and session then
-    run("quota", "quota-axi --json", { session = session.id, ttl = 60, timeout = QUOTA_TIMEOUT })
+  if not run then
+    return
+  end
+  if type(run_forget) == "function" then
+    local configured = thurbox.hosts or {}
+    -- The owned snapshot survives some Lua-state resets. Retire obsolete keys
+    -- before asking again; the kernel preserves forget/run order and rejects
+    -- forgotten late completions. Keys never include a refresh epoch.
+    host_model:reconcile(configured, run_forget, thurbox.runs or {})
+    run("quota", QUOTA_COMMAND, { machine = "local", ttl = 60, timeout = QUOTA_TIMEOUT })
+    for _, host in ipairs(configured) do
+      run(host_quota.key(host.name), QUOTA_COMMAND, {
+        machine = "host:" .. host.name,
+        ttl = 60,
+        timeout = QUOTA_TIMEOUT,
+      })
+    end
+  else
+    -- Older cores keep the session-based local path and honest remote status.
+    local session = local_session()
+    if session then
+      run("quota", QUOTA_COMMAND, { session = session.id, ttl = 60, timeout = QUOTA_TIMEOUT })
+    end
   end
 end
 
@@ -739,7 +760,7 @@ local function quota_reading()
   end
   local now = math.floor((thurbox.taken_at_ms or 0) / 1000)
   local answer = (thurbox.runs or {}).quota
-  if not answer and not local_session() then
+  if not answer and not local_session() and type(run_forget) ~= "function" then
     return { status = "unavailable", reason = "needs a local session", rows = {} }
   end
   local stdout = answer and answer.stdout
@@ -1130,8 +1151,8 @@ local function body(width)
   end
 
   push_quota(rows, width)
-  -- Snapshot-only rendering. Remote execution is wired only after the core
-  -- host selector is available and verified; absent answers remain pending.
+  -- Snapshot-only rendering. Actions/events request trusted host execution;
+  -- absent answers remain pending and old cores stay explicitly unavailable.
   local configured = snapshot.hosts or {}
   local page = math.max(1, math.min(state.quota_page or 1, host_quota.pages(configured)))
   local groups = host_model:read(
@@ -1187,13 +1208,13 @@ return {
   name = NAME,
   capabilities = { "run" },
   pure = true,
-  -- A session can appear after the reload, and the run needs one.
+  -- A new session also retries the older-core local fallback when needed.
   events = { "interface.reloaded", "session.created" },
   on_event = function()
     refresh_quota()
   end,
   commands = {
-    { action = "info.quota.refresh", desc = "refresh local account quotas" },
+    { action = "info.quota.refresh", desc = "refresh account quotas on all hosts" },
     { action = "info.quota.next", desc = "next quota host page" },
     { action = "info.quota.previous", desc = "previous quota host page" },
   },
