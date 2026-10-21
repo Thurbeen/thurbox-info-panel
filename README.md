@@ -141,10 +141,9 @@ forgets its answer and any queued request (Thurbox reads `hosts.toml` at start).
 A command already running on a host is not cancelled; Thurbox's own timeout and
 concurrency limits bound it.
 
-Remote hosts need a Thurbox that includes
-[#1547](https://github.com/Thurbeen/thurbox/pull/1547) (merged as `fe5ba34`),
-which adds the `machine = "host:<name>"` selector and `run_forget`; no release
-with it is published yet. Older Thurbox keeps the previous behaviour: local accounts are read
+Remote hosts need **Thurbox 2.66.0 or later**, which adds the
+`machine = "host:<name>"` selector and `run_forget`
+([#1547](https://github.com/Thurbeen/thurbox/pull/1547)). Older Thurbox keeps the previous behaviour: local accounts are read
 in the selected session when it is local, otherwise in the first local one,
 **needs a local session** is shown when there is none, and each host block says
 **host quota API unavailable**.
@@ -188,7 +187,7 @@ requests from drawing. `tests/snapshots/` pins the quota section at 50 and 30 co
 Native Windows CI installs and checks the same plugin.
 
 With `INFO_PANEL_CORE_BIN` naming a directory holding a `thurbox` and
-`thurbox-cli` that include #1547, the gate also runs
+`thurbox-cli` of 2.66.0 or later, the gate also runs
 `tests/remote-smoke.py`: a disposable HOME, profile and tmux socket, five
 `hosts.toml` hosts with `share_sessions = false` behind a fake `ssh` and a fake
 quota-axi, and no sessions. It grants run through the TUI's own settings and
@@ -225,7 +224,7 @@ should remain within the column. Uninstall quota-axi in the disposable environme
 and refresh: the install command should replace the quota data. The GIF above
 shows the mock-data visual path; live provider access requires your own grant.
 
-For remote hosts, run a Thurbox build that includes #1547 (see
+For remote hosts, run Thurbox 2.66.0 or later (see
 [Remote host quotas](#remote-host-quotas)) with one or more `hosts.toml` hosts
 that have quota-axi installed, and use the refresh palette command with no session
 open: each host should get its own **Quota left · remote · <host>** block with
@@ -233,7 +232,7 @@ its own readings, beside the local block. An unreachable host should say
 **unavailable** and why, while the others still show gauges. With more than
 three hosts, **next quota host page** shows the rest. Remove a host from
 `hosts.toml` and restart Thurbox: its block disappears. On a Thurbox release
-without it, each host block says **host quota API unavailable** and
+before 2.66.0, each host block says **host quota API unavailable** and
 the local block behaves as before.
 
 For scrolling, shrink the terminal or the column until the title shows
