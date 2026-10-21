@@ -254,6 +254,19 @@ for _, key in ipairs(pane.keys) do
   assert(not key.action:find("scroll", 1, true), "scroll took a global key: " .. key.key)
 end
 assert(pane.focusable == false, "scrolling must not make the readout take focus")
+-- One palette page moves by the viewport less one line of context, measured
+-- by the render before it, at every short height.
+for _, h in ipairs({ 5, 8, 14 }) do
+  state = {}
+  local all = reference(pane, 36)
+  local before = window(all, frame(pane, 36, h), 1)
+  pane.on_action("info.scroll.down")
+  local after = window(all, frame(pane, 36, h), before)
+  assert(
+    after - before == h - 3,
+    string.format("a page at height %d moved %d lines", h, after - before)
+  )
+end
 -- The kernel offers the wheel only to a hit target. A pane that cannot take
 -- focus is not one by its rect alone, so its body must carry an identity.
 assert(pane.render({ width = 36, height = 8 }).id, "the wheel cannot find an unidentified pane")
