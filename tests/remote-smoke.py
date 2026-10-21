@@ -175,7 +175,49 @@ try:
     quota_calls=[json.loads(s) for s in (root/'quota-calls.jsonl').read_text().splitlines()]
     assert {c['host'] for c in quota_calls} == {'local','healthy','missing','malformed'}
     (evidence/'transport-calls.json').write_text(json.dumps(ssh_calls,indent=2)+'\n')
-    print('Real host TUI passed: public trust, sessionless/share=false, distinct local/remote, slow isolation, TTL, errors, timeout')
+    # Whole-panel scroll in a short column, driven by real SGR wheel reports
+    # written to the TUI's terminal over the info pane, then by the palette.
+    def info_column():
+        lines = screen().splitlines()
+        for row, line in enumerate(lines):
+            if '╭ Info' in line:
+                col = line.index('╭ Info')
+                return row, col, [l[col:col+44] for l in lines[row:]]
+        raise AssertionError('no info border\n'+screen())
+    def wait_title(marker, timeout=10):
+        deadline=time.monotonic()+timeout
+        while time.monotonic()<deadline:
+            _, _, column = info_column()
+            if column[0].startswith('╭ '+marker+' ─'): return column
+            time.sleep(.1)
+        raise AssertionError('Missing title '+marker+'\n'+screen())
+    def wheel(up, count):
+        row, col, _ = info_column()
+        code = 64 if up else 65
+        # Raw bytes (-H), as a terminal sends them; -l would make each a key.
+        report = f'\x1b[<{code};{col+10};{row+5}M'.encode().hex(' ').split()
+        for _ in range(count):
+            tmux('send-keys','-t','hosts','-H',*report)
+    tmux('resize-window','-t','hosts','-x','180','-y','16')
+    cli('ui','action','info.quota.previous','--json')
+    top = wait_title('Info ↓')
+    assert any('no session selected' in l for l in top), top
+    assert not any('RAM' in l for l in top), 'short column showed its end without scrolling'
+    save('scroll-top')
+    wheel(False, 80)
+    bottom = wait_title('Info ↑')
+    assert any('RAM' in l for l in bottom), 'wheel never reached the last component'
+    save('scroll-bottom')
+    wheel(True, 80)
+    back = wait_title('Info ↓')
+    assert any('no session selected' in l for l in back), 'wheel never returned to the top'
+    cli('ui','action','info.scroll.down','--json')
+    wait_title('Info ↑↓')
+    save('scroll-action')
+    tmux('resize-window','-t','hosts','-x','180','-y','55')
+    wait_title('Info')
+    save('scroll-fits')
+    print('Real host TUI passed: public trust, sessionless/share=false, distinct local/remote, slow isolation, TTL, errors, timeout, short-column wheel/palette scroll')
 except Exception:
     if started:
         save('failure')

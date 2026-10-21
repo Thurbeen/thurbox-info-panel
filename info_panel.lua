@@ -20,14 +20,16 @@
 --    rows being drawn were read, which is the right instant to measure from
 --    anyway.
 --
--- It declares no terminal input. The wheel scrolls the readout; palette actions
--- page configured quota hosts without changing the selected session.
+-- It declares no terminal input. The wheel scrolls the whole readout a line per
+-- report; palette actions page it without a mouse, and page configured quota
+-- hosts, without changing the selected session.
 
 local format = require("thurbox-info-panel.lib.format")
 local quota = require("thurbox-info-panel.lib.quota")
 local host_quota = require("thurbox-info-panel.lib.host_quota")
 local host_model = host_quota.new()
-local scroll_limit = 0
+-- What the last render measured, so input between renders scrolls by it.
+local scroll_limit, viewport = 0, 1
 local panels = require("lib.panels")
 local theme = require("lib.theme")
 local widgets = require("lib.widgets")
@@ -1109,10 +1111,22 @@ end
 --- cannot take focus (see the declaration below), so a focused border would
 --- promise a keyboard it does not have. v1 drew it with `border_unfocused` for
 --- the same reason.
-local function panel(rows)
+--- Move the readout by `lines`, within what the last render could show. A stale
+--- offset past a shrunken end is clamped first, so it is never unwound by input.
+local function scroll(lines)
+  local offset = math.min(state.info_scroll or 0, scroll_limit)
+  state.info_scroll = math.max(0, math.min(scroll_limit, offset + lines))
+end
+
+--- `title` says when more of the readout is above (↑) or below (↓) the column.
+local function panel(rows, title)
   return {
     type = "box",
-    frame = widgets.panel("Info", false),
+    -- The kernel offers a wheel tick only to a hit target, and a pane that
+    -- cannot take focus is not one by its rect. An identity makes the body one;
+    -- with no `on_click`, a press there still falls through to text selection.
+    id = NAME,
+    frame = widgets.panel(title or "Info", false),
     children = rows,
   }
 end
@@ -1215,6 +1229,8 @@ return {
   end,
   commands = {
     { action = "info.quota.refresh", desc = "refresh account quotas on all hosts" },
+    { action = "info.scroll.down", desc = "scroll the info panel down a page" },
+    { action = "info.scroll.up", desc = "scroll the info panel up a page" },
     { action = "info.quota.next", desc = "next quota host page" },
     { action = "info.quota.previous", desc = "previous quota host page" },
   },
@@ -1269,13 +1285,15 @@ return {
     for _, row in ipairs(rows) do
       count = count + (row.len or 0)
     end
-    scroll_limit = math.max(0, count - height)
+    scroll_limit, viewport = math.max(0, count - height), height
     local offset = math.max(0, math.min(state.info_scroll or 0, scroll_limit))
     local visible, at = {}, 0
     for _, row in ipairs(rows) do
       local length = row.len or 0
       if length > 0 and at + length > offset and at < offset + height then
-        if row.type == "text" and type(row.text) == "table" then
+        -- Only a row of several lines is cut. A one-line row may hold a single
+        -- span rather than a list of lines (`widgets.divider` does).
+        if length > 1 and row.type == "text" and type(row.text) == "table" then
           local lines = {}
           for i = math.max(1, offset - at + 1), math.min(length, offset + height - at) do
             lines[#lines + 1] = row.text[i]
@@ -1288,17 +1306,24 @@ return {
       at = at + length
     end
     visible[#visible + 1] = { type = "text", text = "" }
-    return panel(visible)
+    local more = (offset > 0 and "↑" or "") .. (offset < scroll_limit and "↓" or "")
+    return panel(visible, more ~= "" and "Info " .. more or nil)
   end,
 
+  -- One line per report: a detent is several reports, and a step longer than a
+  -- short column would skip lines nobody could then reach.
   on_scroll = function(wheel)
-    local offset = math.min(state.info_scroll or 0, scroll_limit)
-    state.info_scroll = math.max(0, math.min(scroll_limit, offset + (wheel.up and -3 or 3)))
+    scroll(wheel.up and -1 or 1)
     return true
   end,
 
   on_action = function(action)
-    if action == "info.quota.next" or action == "info.quota.previous" then
+    if action == "info.scroll.down" or action == "info.scroll.up" then
+      -- A page keeps one line of context, and still moves in a one-line column.
+      local page = math.max(1, viewport - 1)
+      scroll(action == "info.scroll.down" and page or -page)
+      return true
+    elseif action == "info.quota.next" or action == "info.quota.previous" then
       local pages = host_quota.pages(thurbox.hosts or {})
       local step = action == "info.quota.next" and 1 or -1
       state.quota_page = ((state.quota_page or 1) - 1 + step) % pages + 1
