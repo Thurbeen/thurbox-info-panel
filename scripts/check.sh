@@ -13,6 +13,7 @@ lua tests/quota.lua
 lua tests/host-quota.lua
 lua tests/panel.lua "$UI"
 lua tests/remote-hosts.lua "$UI"
+lua tests/many-hosts.lua "$UI"
 lua tests/scroll.lua "$UI"
 lua tests/snapshot.lua "$UI"
 for scenario in full no-session bare; do

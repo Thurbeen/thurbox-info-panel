@@ -120,9 +120,9 @@ snapshot are marked stale. Account emails from the report are not displayed.
 ### Remote host quotas
 
 Every host in Thurbox's `hosts.toml` gets its own block below the local one,
-**Quota left · remote · <host>**, three hosts per page; the palette's **next
-quota host page** and **previous quota host page** turn pages. Each refresh asks
-this machine and every configured host, whichever page is shown, with
+**Quota left · remote · <host>**, in `hosts.toml` order, however many there
+are; scroll the panel to reach the later ones. Each refresh asks this machine
+and every configured host at once, each with its own 30-second timeout, with
 `quota-axi --json --no-credential-refresh`, so a quota refresh never renews a
 credential. Install quota-axi on each host the same way.
 
@@ -134,9 +134,22 @@ refresh action → run_forget(retired host keys)
 ```
 
 Hosts need no session and no `share_sessions`. Readings are never pooled: each
-host's block shows only that host's report, and a host that is offline, slow,
-missing quota-axi or returns unreadable output says why after **unavailable**
-without holding up the others. When a host leaves `hosts.toml`, the next refresh
+host's block shows only that host's report. Its title line ends in the host's
+state, so a long list reads at a glance:
+
+| State | Meaning |
+| --- | --- |
+| **ok** | a fresh report; its gauges follow |
+| **checking** | the first answer is still on its way |
+| **offline** | unreachable or no answer within the timeout |
+| **auth needed** | reachable, but no provider is logged in |
+| **stale · 3h old** | the host's report is older than five minutes |
+| **no quota-axi** | quota-axi is not installed there |
+| **error** | quota-axi failed or printed something unreadable |
+
+A host that is not ok takes one line under its title, saying why, and holds up
+none of the others. A host that answered once keeps its last gauges when it
+drops off, as **offline · 12m old**. When a host leaves `hosts.toml`, the next refresh
 forgets its answer and any queued request (Thurbox reads `hosts.toml` at start).
 A command already running on a host is not cancelled; Thurbox's own timeout and
 concurrency limits bound it.
@@ -229,8 +242,8 @@ For remote hosts, run Thurbox 2.66.0 or later (see
 that have quota-axi installed, and use the refresh palette command with no session
 open: each host should get its own **Quota left · remote · <host>** block with
 its own readings, beside the local block. An unreachable host should say
-**unavailable** and why, while the others still show gauges. With more than
-three hosts, **next quota host page** shows the rest. Remove a host from
+**offline** and why, while the others still show gauges. With four or more
+hosts, scroll down: the fourth host's block is there too. Remove a host from
 `hosts.toml` and restart Thurbox: its block disappears. On a Thurbox release
 before 2.66.0, each host block says **host quota API unavailable** and
 the local block behaves as before.

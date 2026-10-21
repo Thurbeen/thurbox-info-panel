@@ -1,7 +1,7 @@
 -- Transport-independent host quota model. Execution remains the kernel's job.
 local quota = require("thurbox-info-panel.lib.quota")
+local format = require("thurbox-info-panel.lib.format")
 local hosts = {}
-local PAGE_SIZE = 3
 local KEY_PREFIX = "quota.host:"
 local MAX_OUTPUT = 131072
 local MAX_ROWS, MAX_WINDOWS = 32, 32
@@ -81,12 +81,50 @@ local function reading(answer, now)
   return value
 end
 
-function hosts.pages(configured)
-  return math.max(1, math.ceil(#configured / PAGE_SIZE))
+-- quota-axi's own words for a logged-out account, and an auth row status.
+local function auth(text)
+  text = type(text) == "string" and text:lower() or ""
+  return text:find("auth", 1, true) or text:find("log in", 1, true) or text:find("login", 1, true)
+end
+
+-- Unreachable, rather than reachable and failing: the transport's own failure,
+-- ssh's 255, or no answer within the per-host timeout.
+local function offline(answer)
+  return answer and (answer.state ~= "done" or answer.timed_out or answer.status == 255)
+end
+
+--- One short word or two for a host's title line: ok, checking, offline,
+--- auth needed, stale · 3h old, no quota-axi or error. Nil when untrusted.
+--- `answer` is the run the reading came from, which says whether it arrived.
+function hosts.state(reading, now, answer)
+  local status = reading.status
+  if status == "loading" then
+    return "checking"
+  elseif status == "missing" then
+    return "no quota-axi"
+  elseif status == "unavailable" then
+    if offline(answer) then
+      return "offline"
+    end
+    return auth(reading.reason) and "auth needed" or "error"
+  elseif status ~= "ready" then
+    return nil
+  end
+  if reading.generated_at and now - reading.generated_at > 300 then
+    return "stale · " .. format.duration(now - reading.generated_at) .. " old"
+  end
+  local fresh, authless = false, false
+  for _, row in ipairs(reading.rows) do
+    fresh = fresh or row.status == "fresh"
+    authless = authless or auth(row.status)
+  end
+  return (not fresh and authless) and "auth needed" or "ok"
 end
 
 function hosts.new()
-  local model = { cache = {}, desired = {} }
+  -- `last` is each configured host's last ready reading, drawn while the host
+  -- cannot answer. Like `cache`, it holds configured hosts only.
+  local model = { cache = {}, desired = {}, last = {} }
   -- Call from a handler, never render. The adapter supplies the verified core
   -- run_forget capability; this model does not execute or cancel any command.
   function model:reconcile(configured, forget, answers)
@@ -115,11 +153,9 @@ function hosts.new()
     end
     self.desired = desired
   end
-  function model:read(configured, answers, now, trusted, page)
-    page = math.max(1, math.min(page or 1, hosts.pages(configured)))
-    local groups, cache = {}, {}
-    for i = (page - 1) * PAGE_SIZE + 1, math.min(page * PAGE_SIZE, #configured) do
-      local host = configured[i]
+  function model:read(configured, answers, now, trusted)
+    local groups, cache, last = {}, {}, {}
+    for _, host in ipairs(configured) do
       local key = hosts.key(host.name)
       local answer = answers[key]
       local value
@@ -135,10 +171,27 @@ function hosts.new()
         end
         cache[key] = { fields = answer_fields(answer), minute = minute, reading = value }
       end
-      groups[#groups + 1] = { host = host, reading = value }
+      -- `reading` is this answer; `drawn` is what the panel paints for the host.
+      local group =
+        { host = host, reading = value, drawn = value, state = hosts.state(value, now, answer) }
+      if value.status == "ready" then
+        last[key] = value
+      elseif trusted and self.last[key] then
+        -- Keep the gauges. A re-check in progress changes nothing; a failure
+        -- says why they are old, and how old.
+        last[key] = self.last[key]
+        group.drawn = last[key]
+        if value.status == "loading" then
+          group.state = hosts.state(last[key], now)
+        else
+          local age = format.duration(now - (last[key].generated_at or now))
+          group.state = group.state .. " · " .. age .. " old"
+        end
+      end
+      groups[#groups + 1] = group
     end
-    -- Only the current page survives. No history of removed hosts or reports.
-    self.cache = cache
+    -- Only configured hosts survive. No history of removed hosts or reports.
+    self.cache, self.last = cache, last
     return groups
   end
   return model
