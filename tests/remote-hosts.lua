@@ -280,6 +280,17 @@ adapter_pane.on_event("interface.reloaded")
 assert(not thurbox.runs[host_quota.key("pending")], "reload leaked an obsolete pending host key")
 assert(not thurbox.runs[host_quota.key("session")], "reload leaked an obsolete cached host key")
 assert(requested.quota == "local" and requested[host_quota.key("local")] == "host:local")
+-- On a core with the selector the local quota needs no session: with none
+-- open and no answer yet it is loading, never "needs a local session".
+thurbox.sessions, thurbox.runs, store = {}, {}, {}
+local sessionless = {}
+flatten(dofile(PANE).render({ width = 44, height = 200 }), sessionless, 44)
+local sessionless_text = table.concat(sessionless, "\n")
+assert(
+  not sessionless_text:find("needs a local session", 1, true),
+  "the selector core still demanded a local session"
+)
+assert(sessionless_text:find("loading", 1, true), "sessionless local quota was not pending")
 print(
   "Panel host adapter passed: real selectors, no sessions, distinct readings, reload retirement"
 )

@@ -46,10 +46,21 @@ for _, row in ipairs(stale.rows) do
     assert(window.remaining == nil, "stale is never fresh capacity")
   end
 end
-runs[host_quota.key("alpha")] = answer(string.rep(" ", 131073))
-assert(model:read(hosts, runs, now, true, 1)[1].reading.status == "unavailable")
-runs[host_quota.key("alpha")] = answer(string.rep("[", 2000) .. string.rep("]", 2000))
-assert(model:read(hosts, runs, now, true, 1)[1].reading.status == "unavailable")
+-- Both bounds are tested with reports that would otherwise decode as ready, so
+-- removing either check is caught rather than masked by a parse failure.
+runs[host_quota.key("alpha")] = answer(report)
+assert(model:read(hosts, runs, now, true, 1)[1].reading.status == "ready")
+runs[host_quota.key("alpha")] = answer(report .. string.rep(" ", 131073 - #report))
+assert(
+  model:read(hosts, runs, now, true, 1)[1].reading.reason == "quota output exceeds safety limits",
+  "an oversized report was decoded"
+)
+local deep = report:gsub("^%s*{", '{"pad":' .. string.rep("[", 40) .. string.rep("]", 40) .. ",", 1)
+runs[host_quota.key("alpha")] = answer(deep)
+assert(
+  model:read(hosts, runs, now, true, 1)[1].reading.reason == "quota output exceeds safety limits",
+  "a deeply nested report was decoded"
+)
 -- Reports that exceed render budgets are rejected as a whole, never pooled
 -- or silently shortened into a misleading subset of accounts/windows.
 local provider = '{"provider":"codex","state":{"status":"fresh"},"windows":[]}'
