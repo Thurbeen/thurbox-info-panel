@@ -89,26 +89,24 @@ end
 
 -- Unreachable, rather than reachable and failing: the transport's own failure,
 -- ssh's 255, or no answer within the per-host timeout.
-local function offline(reading)
-  local reason = reading.reason or ""
-  return reason:find("^timed out") or reason:find("^exit 255") or not reason:find("^exit ")
+local function offline(answer)
+  return answer and (answer.state ~= "done" or answer.timed_out or answer.status == 255)
 end
 
 --- One short word or two for a host's title line: ok, checking, offline,
 --- auth needed, stale · 3h old, no quota-axi or error. Nil when untrusted.
-function hosts.state(reading, now)
+--- `answer` is the run the reading came from, which says whether it arrived.
+function hosts.state(reading, now, answer)
   local status = reading.status
   if status == "loading" then
     return "checking"
   elseif status == "missing" then
     return "no quota-axi"
   elseif status == "unavailable" then
-    if auth(reading.reason) then
-      return "auth needed"
+    if offline(answer) then
+      return "offline"
     end
-    local reason = reading.reason or ""
-    local broken = reason:find("^unreadable") or reason:find("^unsupported")
-    return (not broken and offline(reading)) and "offline" or "error"
+    return auth(reading.reason) and "auth needed" or "error"
   elseif status ~= "ready" then
     return nil
   end
@@ -174,7 +172,8 @@ function hosts.new()
         cache[key] = { fields = answer_fields(answer), minute = minute, reading = value }
       end
       -- `reading` is this answer; `drawn` is what the panel paints for the host.
-      local group = { host = host, reading = value, drawn = value, state = hosts.state(value, now) }
+      local group =
+        { host = host, reading = value, drawn = value, state = hosts.state(value, now, answer) }
       if value.status == "ready" then
         last[key] = value
       elseif trusted and self.last[key] then

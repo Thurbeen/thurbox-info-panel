@@ -71,6 +71,14 @@ local KINDS = {
   { kind = "old", state = "stale · 3h old", answer = done(stale_report) },
   { kind = "bare", state = "no quota-axi", answer = { state = "done", status = 127 } },
   { kind = "broken", state = "error", answer = done("{broken") },
+  -- Reachable hosts whose report is rejected are not offline.
+  { kind = "huge", state = "error", answer = done(report .. string.rep(" ", 131072)) },
+  -- ssh's own authentication failure is the transport, not a provider login.
+  {
+    kind = "sshkey",
+    state = "offline",
+    answer = { state = "done", status = 255, stderr = "Authentication failed." },
+  },
 }
 local N = 40
 local configured, runs, expect = {}, {}, {}
