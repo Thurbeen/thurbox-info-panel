@@ -116,6 +116,13 @@ local later = cached:read({ { name = "flaky" }, { name = "steady" } }, {
 assert(later[1].state == "offline · 12m old", "cached host state: " .. tostring(later[1].state))
 assert(later[1].drawn.status == "ready", "a cached reading must still be drawn")
 assert(not later[2].state:find("offline", 1, true), "a neighbour inherited the drop")
+-- A re-check in progress keeps the cached reading and its own state.
+local rechecking = cached:read({ { name = "flaky" }, { name = "steady" } }, {
+  [host_quota.key("flaky")] = { state = "pending" },
+  [host_quota.key("steady")] = done(report),
+}, now, true)
+assert(rechecking[1].state == "ok", "a re-check read as " .. tostring(rechecking[1].state))
+assert(rechecking[1].drawn.status == "ready", "a re-check dropped the cached gauges")
 -- The cache follows hosts.toml: a removed host's reading is gone.
 cached:read({ { name = "steady" } }, {}, now, true)
 local back = cached:read({ { name = "flaky" } }, {
