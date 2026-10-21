@@ -90,6 +90,32 @@ for _, width in ipairs({ 28, 44, 80 }) do
 end
 print("Configured remote hosts appear at all panel widths")
 
+-- Regression: a host configured after three others must not hide behind a
+-- palette-only page. The panel scrolls, so every host's reading is in it.
+state = {}
+thurbox.hosts = {
+  { name = "first", platform = "posix" },
+  { name = "second", platform = "windows" },
+  { name = "third", platform = "posix" },
+  { name = "fourth", platform = "posix" },
+}
+for _, host in ipairs({ "first", "second", "third" }) do
+  thurbox.runs["quota.host:" .. host] = { state = "failed", error = "fixture host offline" }
+end
+thurbox.runs["quota.host:fourth"] = {
+  state = "done",
+  status = 0,
+  stdout = report:gsub('"percentRemaining": 80', '"percentRemaining": 61'),
+}
+run_forget = function() end
+local later_lines = {}
+flatten(dofile(PANE).render({ width = 44, height = 400 }), later_lines, 44)
+local later = table.concat(later_lines, "\n")
+assert(later:find("fourth", 1, true), "the fourth host is not in the panel")
+assert(later:find("61%", 1, true), "the fourth host shows no quota")
+run_forget = nil
+print("Every configured host's quota is in the panel without paging")
+
 -- Old cores must report a missing API honestly, even if a report with the
 -- plugin's future remote key happens to be present in the snapshot.
 run_forget = nil
@@ -145,15 +171,12 @@ for _, width in ipairs({ 28, 44, 80 }) do
   end
   local pane = dofile(PANE)
   local captured = {}
-  for _ = 1, 2 do
-    for _ = 1, 100 do
-      local lines = {}
-      flatten(pane.render({ width = width, height = 14 }), lines, width)
-      assert(#lines <= 13, "viewport built more lines than its height")
-      captured[#captured + 1] = table.concat(lines, "\n")
-      pane.on_scroll({ up = false })
-    end
-    pane.on_action("info.quota.next")
+  for _ = 1, 200 do
+    local lines = {}
+    flatten(pane.render({ width = width, height = 14 }), lines, width)
+    assert(#lines <= 13, "viewport built more lines than its height")
+    captured[#captured + 1] = table.concat(lines, "\n")
+    pane.on_scroll({ up = false })
   end
   -- Repeated downward wheel ticks at the bottom must not accumulate overshoot.
   for _ = 1, 200 do
@@ -257,21 +280,18 @@ assert(
   "retired snapshot keys must be forgotten before asks"
 )
 local combined = {}
-for _ = 1, 2 do
-  for _ = 1, 100 do
-    local lines = {}
-    flatten(adapter_pane.render({ width = 44, height = 14 }), lines, 44)
-    combined[#combined + 1] = table.concat(lines, "\n")
-    adapter_pane.on_scroll({ up = false })
-  end
-  adapter_pane.on_action("info.quota.next")
+for _ = 1, 200 do
+  local lines = {}
+  flatten(adapter_pane.render({ width = 44, height = 14 }), lines, 44)
+  combined[#combined + 1] = table.concat(lines, "\n")
+  adapter_pane.on_scroll({ up = false })
 end
 local result = table.concat(combined, "\n"):gsub("%s*\n%s*", " ")
 assert(
   result:find("77%", 1, true) and result:find("80%", 1, true),
   "host readings were substituted or pooled"
 )
-assert(result:find("fixture host unavailable", 1, true) and result:find("loading", 1, true))
+assert(result:find("fixture host unavailable", 1, true) and result:find("checking", 1, true))
 -- A VM rebuild loses private state; queued and cached obsolete answers still retire.
 thurbox.hosts = { configured[1] }
 requested, order = {}, {}

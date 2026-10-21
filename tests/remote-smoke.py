@@ -65,12 +65,13 @@ from pathlib import Path
 root=Path({str(root)!r})
 assert sys.argv[1:]==['--json','--no-credential-refresh'], sys.argv
 host=os.environ.get('FIXTURE_HOST','local')
+kind=host.split('-')[0]
 with (root/'quota-calls.jsonl').open('a') as f: f.write(json.dumps({{'host':host,'args':sys.argv[1:]}})+'\\n')
 report=json.loads((root/'report.json').read_text())
-if host=='missing': sys.exit(127)
-if host=='malformed': print('{{broken'); sys.exit(0)
+if kind=='missing': sys.exit(127)
+if kind=='malformed': print('{{broken'); sys.exit(0)
 for p in report['providers']:
-    for w in p['windows']: w['percentRemaining']=37 if host=='healthy' else 80
+    for w in p['windows']: w['percentRemaining']=37 if kind=='healthy' else 80
 print(json.dumps(report))
 ''')
 executable('ssh', f'''import json, os, sys, time
@@ -82,18 +83,24 @@ while a and a[0].startswith('-'):
     if opt in ['-o','-p','-i','-F']: a.pop(0)
 assert a and a[0].startswith('fixture-'), a
 host=a.pop(0)[len('fixture-'):]
+kind=host.split('-')[0]
 program=' '.join(a)
 # The core's read-only mux probes are not quota requests.
 if 'quota-axi' not in program: print('tmux'); sys.exit(0)
-with (root/'ssh-calls.jsonl').open('a') as f: f.write(json.dumps({{'host':host,'program':program,'pid':os.getpid()}})+'\\n')
-if host=='offline': print('fixture transport unavailable',file=sys.stderr); sys.exit(255)
-if host=='slow': time.sleep(60); sys.exit(1)
+with (root/'ssh-calls.jsonl').open('a') as f: f.write(json.dumps({{'host':host,'program':program,'pid':os.getpid(),'at':time.time()}})+'\\n')
+if kind=='offline': print('fixture transport unavailable',file=sys.stderr); sys.exit(255)
+if kind=='slow': time.sleep(60); sys.exit(1)
 home=root/('home-'+host); home.mkdir(exist_ok=True)
 os.environ['HOME']=str(home)
 os.environ['FIXTURE_HOST']=host
 os.execvp('sh',['sh','-c',program])
 ''')
-hosts = ['healthy','offline','missing','malformed','slow']
+# Under WSL the core discovers distros with wsl.exe and mirrors their real
+# sessions; this one finds none.
+executable('wsl.exe', 'import sys\nsys.exit(0)\n')
+# Tens of hosts in the real TUI: the five kinds, then more healthy and offline ones.
+hosts = ['healthy','offline','missing','malformed','slow'] + [
+    f'{kind}-{i}' for i in range(2, 9) for kind in ('healthy', 'offline')]
 (root/'config/hosts.toml').write_text('config_version = 1\n'+''.join(
     f'\n[[hosts]]\nname = "{host}"\ndestination = "fixture-{host}"\nshare_sessions = false\n'
     for host in hosts))
@@ -121,6 +128,22 @@ def wait_for(needle, timeout=10):
         if needle in frame: return frame
         time.sleep(.1)
     raise AssertionError('Missing '+needle+'\n'+screen())
+
+def to_top():
+    for _ in range(40):
+        cli('ui','action','info.scroll.up','--json')
+
+def wait_in_panel(needle, timeout=10):
+    """Page down the scrolled panel until needle shows, rescanning until timeout."""
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        to_top()
+        for _ in range(40):
+            frame=screen()
+            if needle in frame: return frame
+            cli('ui','action','info.scroll.down','--json')
+        time.sleep(.2)
+    raise AssertionError('Missing '+needle+' anywhere in the panel\n'+screen())
 
 def save(name):
     (evidence/(name+'.txt')).write_text(screen())
@@ -156,24 +179,28 @@ try:
     wait_for('80%')
     assert 'no session selected' in screen()
     save('healthy')
-    cli('ui','action','info.quota.next','--json')
-    wait_for('loading')
+    # The fifth host has no page of its own: scrolling the panel reaches it.
+    wait_in_panel('checking')
     save('pending-peer')
     calls_before = (root/'quota-calls.jsonl').read_text().splitlines()
     for _ in range(10):
         cli('ui','action','info.quota.refresh','--json')
     time.sleep(.2)
     assert len((root/'quota-calls.jsonl').read_text().splitlines()) == len(calls_before), 'TTL did not deduplicate requests'
-    # Every host is fetched even when on another display page, with no sessions.
-    wait_for('unreadable')
-    wait_for('timed out after 30s',timeout=40)
+    # Every host is fetched, wherever it sits in the panel, with no sessions.
+    wait_in_panel('unreadable')
+    wait_in_panel('timed out after 30s',timeout=40)
     save('peer-failures')
     ssh_calls=[json.loads(s) for s in (root/'ssh-calls.jsonl').read_text().splitlines()]
     assert set(c['host'] for c in ssh_calls) == set(hosts), ssh_calls
     assert len(ssh_calls)==len(hosts), 'one command per host per TTL required'
     assert all('--no-credential-refresh' in c['program'] for c in ssh_calls)
     quota_calls=[json.loads(s) for s in (root/'quota-calls.jsonl').read_text().splitlines()]
-    assert {c['host'] for c in quota_calls} == {'local','healthy','missing','malformed'}
+    assert {c['host'] for c in quota_calls} == {'local','missing','malformed'} | {
+        h for h in hosts if h.startswith('healthy')}
+    # Asked side by side: the slow host's 60s hang delays nobody's ask.
+    times=[c['at'] for c in ssh_calls]
+    assert max(times)-min(times) < 10, 'hosts were asked one after another'
     (evidence/'transport-calls.json').write_text(json.dumps(ssh_calls,indent=2)+'\n')
     # Whole-panel scroll in a short column, driven by real SGR wheel reports
     # written to the TUI's terminal over the info pane, then by the palette.
@@ -187,7 +214,8 @@ try:
     def wait_title(marker, timeout=10):
         deadline=time.monotonic()+timeout
         while time.monotonic()<deadline:
-            _, _, column = info_column()
+            try: _, _, column = info_column()
+            except AssertionError: column = ['']  # a frame caught mid-redraw
             if column[0].startswith('╭ '+marker+' ─'): return column
             time.sleep(.1)
         raise AssertionError('Missing title '+marker+'\n'+screen())
@@ -199,25 +227,26 @@ try:
         for _ in range(count):
             tmux('send-keys','-t','hosts','-H',*report)
     tmux('resize-window','-t','hosts','-x','180','-y','16')
-    cli('ui','action','info.quota.previous','--json')
+    to_top()
     top = wait_title('Info ↓')
     assert any('no session selected' in l for l in top), top
     assert not any('RAM' in l for l in top), 'short column showed its end without scrolling'
     save('scroll-top')
-    wheel(False, 80)
+    wheel(False, 200)
     bottom = wait_title('Info ↑')
     assert any('RAM' in l for l in bottom), 'wheel never reached the last component'
     save('scroll-bottom')
-    wheel(True, 80)
+    wheel(True, 200)
     back = wait_title('Info ↓')
     assert any('no session selected' in l for l in back), 'wheel never returned to the top'
     cli('ui','action','info.scroll.down','--json')
     wait_title('Info ↑↓')
     save('scroll-action')
+    # Tens of hosts never fit, even tall: the panel still scrolls, not crops.
     tmux('resize-window','-t','hosts','-x','180','-y','55')
-    wait_title('Info')
-    save('scroll-fits')
-    print('Real host TUI passed: public trust, sessionless/share=false, distinct local/remote, slow isolation, TTL, errors, timeout, short-column wheel/palette scroll')
+    wait_title('Info ↑↓')
+    save('scroll-tall')
+    print('Real host TUI passed: public trust, sessionless/share=false, distinct local/remote, slow isolation, TTL, errors, timeout, short-column wheel/palette scroll, '+str(len(hosts))+' hosts asked in parallel')
 except Exception:
     if started:
         save('failure')

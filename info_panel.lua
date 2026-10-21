@@ -21,8 +21,8 @@
 --    anyway.
 --
 -- It declares no terminal input. The wheel scrolls the whole readout a line per
--- report; palette actions page it without a mouse, and page configured quota
--- hosts, without changing the selected session.
+-- report; palette actions page it without a mouse, without changing the
+-- selected session.
 
 local format = require("thurbox-info-panel.lib.format")
 local quota = require("thurbox-info-panel.lib.quota")
@@ -880,7 +880,10 @@ local function with_note(spans, note, style, edge)
   return { type = "text", len = 1, text = { spans } }
 end
 
-local function push_quota(rows, width, reading, titles)
+--- `state` is a remote host's one-line state (see `host_quota.state`): it takes
+--- the title's note, and a host that is not ok says why in one line, not a
+--- wrapped paragraph, so tens of hosts stay readable.
+local function push_quota(rows, width, reading, titles, state)
   reading = reading or quota_reading()
   local now = math.floor((thurbox.taken_at_ms or 0) / 1000)
   -- The reading's age, only once a refresh that should have landed has not:
@@ -889,7 +892,18 @@ local function push_quota(rows, width, reading, titles)
   if reading.generated_at and now - reading.generated_at > 90 then
     age = format.duration(now - reading.generated_at) .. " ago"
   end
-  section(rows, titles or { "Quota left · local accounts", "Quota left" }, width, age)
+  section(rows, titles or { "Quota left · local accounts", "Quota left" }, width, state or age)
+  if state and reading.status ~= "ready" then
+    local why = reading.status == "missing" and "npm install -g quota-axi" or reading.reason
+    if why then
+      local room = math.max(1, inner_width(width) - #INDENT)
+      rows[#rows + 1] = plain_row(
+        { { text = widgets.truncate((why:gsub("%c", " ")), room), style = { fg = theme.muted } } },
+        width
+      )
+    end
+    return
+  end
   if reading.status ~= "ready" then
     local messages = {
       untrusted = "trust run in Interface settings",
@@ -1168,35 +1182,24 @@ local function body(width)
   -- Snapshot-only rendering. Actions/events request trusted host execution;
   -- absent answers remain pending and old cores stay explicitly unavailable.
   local configured = snapshot.hosts or {}
-  local page = math.max(1, math.min(state.quota_page or 1, host_quota.pages(configured)))
   local groups = host_model:read(
     configured,
     snapshot.runs or {},
     math.floor((snapshot.taken_at_ms or 0) / 1000),
-    run ~= nil,
-    page
+    run ~= nil
   )
   for _, group in ipairs(groups) do
     if run and type(run_forget) ~= "function" then
-      group.reading = { status = "unavailable", reason = "host quota API unavailable", rows = {} }
+      group.drawn = { status = "unavailable", reason = "host quota API unavailable", rows = {} }
+      group.state = "unsupported"
     end
     local label = group.host.name:gsub("%c", " ")
     push_quota(
       rows,
       width,
-      group.reading,
-      { "Quota left · remote · " .. label, "Remote · " .. label, label }
-    )
-  end
-  if host_quota.pages(configured) > 1 then
-    rows[#rows + 1] = quota_field(
-      string.format(
-        "Host page %d/%d · quota next/previous in palette",
-        page,
-        host_quota.pages(configured)
-      ),
-      { fg = theme.muted },
-      width
+      group.drawn,
+      { "Quota left · remote · " .. label, "Remote · " .. label, label },
+      group.state
     )
   end
 
@@ -1231,8 +1234,6 @@ return {
     { action = "info.quota.refresh", desc = "refresh account quotas on all hosts" },
     { action = "info.scroll.down", desc = "scroll the info panel down a page" },
     { action = "info.scroll.up", desc = "scroll the info panel up a page" },
-    { action = "info.quota.next", desc = "next quota host page" },
-    { action = "info.quota.previous", desc = "previous quota host page" },
   },
 
   -- Its own COLUMN, and `layout.lua` places it — which is why installing this
@@ -1322,12 +1323,6 @@ return {
       -- A page keeps one line of context, and still moves in a one-line column.
       local page = math.max(1, viewport - 1)
       scroll(action == "info.scroll.down" and page or -page)
-      return true
-    elseif action == "info.quota.next" or action == "info.quota.previous" then
-      local pages = host_quota.pages(thurbox.hosts or {})
-      local step = action == "info.quota.next" and 1 or -1
-      state.quota_page = ((state.quota_page or 1) - 1 + step) % pages + 1
-      state.info_scroll = 0
       return true
     elseif action == "info.quota.refresh" then
       refresh_quota()

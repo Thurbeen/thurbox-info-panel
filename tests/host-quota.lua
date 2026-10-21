@@ -1,6 +1,8 @@
 -- Host data is consumed independently of session selection and transport.
-package.preload["thurbox-info-panel.lib.quota"] = function()
-  return dofile("lib/quota.lua")
+for _, name in ipairs({ "quota", "format" }) do
+  package.preload["thurbox-info-panel.lib." .. name] = function()
+    return dofile("lib/" .. name .. ".lua")
+  end
 end
 local host_quota = dofile("lib/host_quota.lua")
 local f = assert(io.open("tests/fixtures/several.json"))
@@ -21,7 +23,7 @@ local runs = {
   [host_quota.key("offline")] = { state = "done", timed_out = true, status = 1 },
 }
 local now = 1791374400
-local groups = model:read(hosts, runs, now, true, 1)
+local groups = model:read(hosts, runs, now, true)
 assert(#groups == 3)
 assert(groups[1].reading.status == "ready", "healthy host must survive peer failures")
 assert(groups[2].reading.status == "unavailable", "malformed report is unknown, not zero")
@@ -35,11 +37,11 @@ for _, row in ipairs(groups[1].reading.rows) do
 end
 assert(accounts["claude:personal"] and accounts["claude:work"])
 assert(windows["5h session"] and windows["Opus week"])
-assert(model:read(hosts, {}, now, true, 1)[1].reading.status == "loading")
-assert(model:read(hosts, runs, now, false, 1)[1].reading.status == "untrusted")
+assert(host_quota.new():read(hosts, {}, now, true)[1].reading.status == "loading")
+assert(model:read(hosts, runs, now, false)[1].reading.status == "untrusted")
 runs[host_quota.key("beta")] = { state = "done", status = 127 }
-assert(model:read(hosts, runs, now, true, 1)[2].reading.status == "missing")
-local stale = model:read(hosts, runs, now + 3600, true, 1)[1].reading
+assert(model:read(hosts, runs, now, true)[2].reading.status == "missing")
+local stale = model:read(hosts, runs, now + 3600, true)[1].reading
 for _, row in ipairs(stale.rows) do
   assert(row.status == "stale")
   for _, window in ipairs(row.windows) do
@@ -49,16 +51,16 @@ end
 -- Both bounds are tested with reports that would otherwise decode as ready, so
 -- removing either check is caught rather than masked by a parse failure.
 runs[host_quota.key("alpha")] = answer(report)
-assert(model:read(hosts, runs, now, true, 1)[1].reading.status == "ready")
+assert(model:read(hosts, runs, now, true)[1].reading.status == "ready")
 runs[host_quota.key("alpha")] = answer(report .. string.rep(" ", 131073 - #report))
 assert(
-  model:read(hosts, runs, now, true, 1)[1].reading.reason == "quota output exceeds safety limits",
+  model:read(hosts, runs, now, true)[1].reading.reason == "quota output exceeds safety limits",
   "an oversized report was decoded"
 )
 local deep = report:gsub("^%s*{", '{"pad":' .. string.rep("[", 40) .. string.rep("]", 40) .. ",", 1)
 runs[host_quota.key("alpha")] = answer(deep)
 assert(
-  model:read(hosts, runs, now, true, 1)[1].reading.reason == "quota output exceeds safety limits",
+  model:read(hosts, runs, now, true)[1].reading.reason == "quota output exceeds safety limits",
   "a deeply nested report was decoded"
 )
 -- Reports that exceed render budgets are rejected as a whole, never pooled
@@ -69,7 +71,7 @@ local many = '{"schemaVersion":6,"generatedAt":"2026-10-07T12:00:00Z","providers
   .. provider
   .. "]}"
 runs[host_quota.key("alpha")] = answer(many)
-assert(model:read(hosts, runs, now, true, 1)[1].reading.reason == "too many quota accounts")
+assert(model:read(hosts, runs, now, true)[1].reading.reason == "too many quota accounts")
 local window = '{"label":"week","percentRemaining":50}'
 local many_windows = '{"schemaVersion":6,"generatedAt":"2026-10-07T12:00:00Z","providers":['
   .. '{"provider":"codex","state":{"status":"fresh"},"windows":['
@@ -77,22 +79,17 @@ local many_windows = '{"schemaVersion":6,"generatedAt":"2026-10-07T12:00:00Z","p
   .. window
   .. "]}]}"
 runs[host_quota.key("alpha")] = answer(many_windows)
-assert(model:read(hosts, runs, now, true, 1)[1].reading.reason == "too many quota windows")
--- Churn and pagination must not retain a report/history per past host.
-for i = 1, 500 do
-  hosts[i] = { name = "host-" .. i }
-end
-local page = model:read(hosts, {}, now, true, 10000)
-assert(#page <= 3, "only one bounded host page is materialized")
+assert(model:read(hosts, runs, now, true)[1].reading.reason == "too many quota windows")
+-- Churn must not retain a report/history per past host.
 collectgarbage("collect")
 local baseline = collectgarbage("count")
 for i = 1, 1000 do
-  model:read({ { name = "replaced-" .. i } }, {}, now, true, 1)
+  model:read({ { name = "replaced-" .. i } }, {}, now, true)
 end
 collectgarbage("collect")
 assert(collectgarbage("count") < baseline + 64, "host churn retained plugin memory")
-assert(#model:read({}, runs, now, true, 1) == 0, "removed hosts must discard obsolete readings")
-print("Host quota fixtures passed: identity, failures, stale data, pages, memory")
+assert(#model:read({}, runs, now, true) == 0, "removed hosts must discard obsolete readings")
+print("Host quota fixtures passed: identity, failures, stale data, memory")
 
 -- Handler-side reconciliation retires only removed host keys. A quota report
 -- already carries every provider/account, so there are no per-refresh keys.
@@ -188,20 +185,18 @@ for _ = 1, 100 do
     { { name = "stable" } },
     { [host_quota.key("stable")] = answer(report) },
     now,
-    true,
-    1
+    true
   )
 end
 assert(decodes == 1, "identical snapshots repeatedly decoded the same report")
 local mutable = answer(report)
-snapshots:read({ { name = "stable" } }, { [host_quota.key("stable")] = mutable }, now, true, 1)
+snapshots:read({ { name = "stable" } }, { [host_quota.key("stable")] = mutable }, now, true)
 mutable.status, mutable.stderr = 1, "credential expired"
 local changed = snapshots:read(
   { { name = "stable" } },
   { [host_quota.key("stable")] = mutable },
   now,
-  true,
-  1
+  true
 )
 assert(
   changed[1].reading.status == "unavailable",
