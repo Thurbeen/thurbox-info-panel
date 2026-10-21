@@ -30,7 +30,14 @@ end
 
 Run `thurbox-cli plugin check`, then press **F2** or click **info**. It follows
 `store.selected`; it is a readout and does not take keyboard focus. The compact
-layout below 36 columns drops the padded label column. Theme roles follow the
+layout below 36 columns drops the padded label column.
+
+When the column is too short for everything, the whole panel scrolls: the wheel
+over it moves one line per report, and the palette's **scroll the info panel
+down a page** and **up a page** do the same without a mouse (bind them to keys
+in your keymap if you like; the panel takes no keys of its own). The border title
+reads **Info ↓**, **Info ↑↓** or **Info ↑** while more is below, on both sides or
+above; the position is kept to what fits after a resize or a refresh. Theme roles follow the
 selected light or dark palette.
 
 ### Account quotas
@@ -46,7 +53,7 @@ thurbox-cli extension install git+https://github.com/Thurbeen/thurbox-info-panel
 The companion extension registers one cron automation, once a minute. Its
 Node.js script asks each running local interface to refresh; no resident process
 or additional quota cache is created. Without the extension, F2 and the command
-palette's **refresh local account quotas** still refresh the panel.
+palette's **refresh account quotas on all hosts** still refresh the panel.
 
 **Grant run once:** `Ctrl+,` → `]` (Interface) → select the info-panel file →
 `t`. Until you grant it, the panel says **trust run in Interface settings** and
@@ -109,10 +116,37 @@ truncated, or exited non-zero (with the first line of its error, cleaned of
 terminal escapes and cut to 120 characters), or its output was unreadable or of
 an unsupported schema. Cached reports older than five minutes relative to the
 snapshot are marked stale. Account emails from the report are not displayed.
-Quotas describe **local accounts**, even when the selected session runs on a
-remote host: Thurbox runs a program in a session, so the panel runs
-quota-axi in the selected session when it is local and otherwise in the first
-local one, and says **needs a local session** when there is none.
+
+### Remote host quotas
+
+Every host in Thurbox's `hosts.toml` gets its own block below the local one,
+**Quota left · remote · <host>**, three hosts per page; the palette's **next
+quota host page** and **previous quota host page** turn pages. Each refresh asks
+this machine and every configured host, whichever page is shown, with
+`quota-axi --json --no-credential-refresh`, so a quota refresh never renews a
+credential. Install quota-axi on each host the same way.
+
+```text
+refresh action → run_forget(retired host keys)
+  → run("quota",            machine = "local")
+  → run("quota.host:<name>", machine = "host:<name>")  one per configured host
+  → Thurbox's own SSH/WSL transport → cached answers → pure render
+```
+
+Hosts need no session and no `share_sessions`. Readings are never pooled: each
+host's block shows only that host's report, and a host that is offline, slow,
+missing quota-axi or returns unreadable output says why after **unavailable**
+without holding up the others. When a host leaves `hosts.toml`, the next refresh
+forgets its answer and any queued request (Thurbox reads `hosts.toml` at start).
+A command already running on a host is not cancelled; Thurbox's own timeout and
+concurrency limits bound it.
+
+Remote hosts need **Thurbox 2.66.0 or later**, which adds the
+`machine = "host:<name>"` selector and `run_forget`
+([#1547](https://github.com/Thurbeen/thurbox/pull/1547)). Older Thurbox keeps the previous behaviour: local accounts are read
+in the selected session when it is local, otherwise in the first local one,
+**needs a local session** is shown when there is none, and each host block says
+**host quota API unavailable**.
 
 Remove the scheduler with `thurbox-cli extension uninstall info-panel-refresh`;
 remove the pane with `thurbox-cli plugin remove info_panel` and remove the layout
@@ -152,6 +186,16 @@ requests from drawing. `tests/snapshots/` pins the quota section at 50 and 30 co
 `tests/format.lua` pins the duration format at its boundaries.
 Native Windows CI installs and checks the same plugin.
 
+With `INFO_PANEL_CORE_BIN` naming a directory holding a `thurbox` and
+`thurbox-cli` of 2.66.0 or later, the gate also runs
+`tests/remote-smoke.py`: a disposable HOME, profile and tmux socket, five
+`hosts.toml` hosts with `share_sessions = false` behind a fake `ssh` and a fake
+quota-axi, and no sessions. It grants run through the TUI's own settings and
+checks that local and remote readings stay distinct, that a slow host times out
+without holding up the others, that offline, missing and unreadable hosts say so,
+and that the 60-second TTL sends one command per host. Text and ANSI frames go to
+`.cache/remote-smoke/`.
+
 `thurbox.yml` is the release sandbox contract. Host scripts use
 `dev/selene.toml`. For a plain-text preview:
 
@@ -179,6 +223,23 @@ columns and select a light and a dark theme in Settings: labels, bars and border
 should remain within the column. Uninstall quota-axi in the disposable environment
 and refresh: the install command should replace the quota data. The GIF above
 shows the mock-data visual path; live provider access requires your own grant.
+
+For remote hosts, run Thurbox 2.66.0 or later (see
+[Remote host quotas](#remote-host-quotas)) with one or more `hosts.toml` hosts
+that have quota-axi installed, and use the refresh palette command with no session
+open: each host should get its own **Quota left · remote · <host>** block with
+its own readings, beside the local block. An unreachable host should say
+**unavailable** and why, while the others still show gauges. With more than
+three hosts, **next quota host page** shows the rest. Remove a host from
+`hosts.toml` and restart Thurbox: its block disappears. On a Thurbox release
+before 2.66.0, each host block says **host quota API unavailable** and
+the local block behaves as before.
+
+For scrolling, shrink the terminal or the column until the title shows
+**Info ↓**, scroll the wheel over the panel to the last section (**System** or
+**Automations**) and back to the first, then use **scroll the info panel down a
+page** from the palette. Make the terminal tall again: the title goes back to
+**Info**.
 
 ## License
 

@@ -20,11 +20,16 @@
 --    rows being drawn were read, which is the right instant to measure from
 --    anyway.
 --
--- It declares no `input` and mutates nothing: like v1's panel it is a readout,
--- so it has no scoped keyboard beyond the one key that brings it forward.
+-- It declares no terminal input. The wheel scrolls the whole readout a line per
+-- report; palette actions page it without a mouse, and page configured quota
+-- hosts, without changing the selected session.
 
 local format = require("thurbox-info-panel.lib.format")
 local quota = require("thurbox-info-panel.lib.quota")
+local host_quota = require("thurbox-info-panel.lib.host_quota")
+local host_model = host_quota.new()
+-- What the last render measured, so input between renders scrolls by it.
+local scroll_limit, viewport = 0, 1
 local panels = require("lib.panels")
 local theme = require("lib.theme")
 local widgets = require("lib.widgets")
@@ -704,6 +709,7 @@ end
 -- All requests originate in actions/events, never in the draw path.
 local parsed_stdout, parsed_stderr, parsed_key, parsed_at, parsed
 local QUOTA_TIMEOUT = 30
+local QUOTA_COMMAND = "quota-axi --json --no-credential-refresh"
 
 --- A session on this machine to run quota-axi in: the selected one when it is
 --- local, else the first local one. Thurbox fails a `run` that names no session,
@@ -724,9 +730,29 @@ local function local_session()
 end
 
 local function refresh_quota()
-  local session = local_session()
-  if run and session then
-    run("quota", "quota-axi --json", { session = session.id, ttl = 60, timeout = QUOTA_TIMEOUT })
+  if not run then
+    return
+  end
+  if type(run_forget) == "function" then
+    local configured = thurbox.hosts or {}
+    -- The owned snapshot survives some Lua-state resets. Retire obsolete keys
+    -- before asking again; the kernel preserves forget/run order and rejects
+    -- forgotten late completions. Keys never include a refresh epoch.
+    host_model:reconcile(configured, run_forget, thurbox.runs or {})
+    run("quota", QUOTA_COMMAND, { machine = "local", ttl = 60, timeout = QUOTA_TIMEOUT })
+    for _, host in ipairs(configured) do
+      run(host_quota.key(host.name), QUOTA_COMMAND, {
+        machine = "host:" .. host.name,
+        ttl = 60,
+        timeout = QUOTA_TIMEOUT,
+      })
+    end
+  else
+    -- Older cores keep the session-based local path and honest remote status.
+    local session = local_session()
+    if session then
+      run("quota", QUOTA_COMMAND, { session = session.id, ttl = 60, timeout = QUOTA_TIMEOUT })
+    end
   end
 end
 
@@ -736,7 +762,7 @@ local function quota_reading()
   end
   local now = math.floor((thurbox.taken_at_ms or 0) / 1000)
   local answer = (thurbox.runs or {}).quota
-  if not answer and not local_session() then
+  if not answer and not local_session() and type(run_forget) ~= "function" then
     return { status = "unavailable", reason = "needs a local session", rows = {} }
   end
   local stdout = answer and answer.stdout
@@ -854,8 +880,8 @@ local function with_note(spans, note, style, edge)
   return { type = "text", len = 1, text = { spans } }
 end
 
-local function push_quota(rows, width)
-  local reading = quota_reading()
+local function push_quota(rows, width, reading, titles)
+  reading = reading or quota_reading()
   local now = math.floor((thurbox.taken_at_ms or 0) / 1000)
   -- The reading's age, only once a refresh that should have landed has not:
   -- inside the TTL and its timeout it is the pane working as designed.
@@ -863,7 +889,7 @@ local function push_quota(rows, width)
   if reading.generated_at and now - reading.generated_at > 90 then
     age = format.duration(now - reading.generated_at) .. " ago"
   end
-  section(rows, { "Quota left · local accounts", "Quota left" }, width, age)
+  section(rows, titles or { "Quota left · local accounts", "Quota left" }, width, age)
   if reading.status ~= "ready" then
     local messages = {
       untrusted = "trust run in Interface settings",
@@ -1085,10 +1111,22 @@ end
 --- cannot take focus (see the declaration below), so a focused border would
 --- promise a keyboard it does not have. v1 drew it with `border_unfocused` for
 --- the same reason.
-local function panel(rows)
+--- Move the readout by `lines`, within what the last render could show. A stale
+--- offset past a shrunken end is clamped first, so it is never unwound by input.
+local function scroll(lines)
+  local offset = math.min(state.info_scroll or 0, scroll_limit)
+  state.info_scroll = math.max(0, math.min(scroll_limit, offset + lines))
+end
+
+--- `title` says when more of the readout is above (↑) or below (↓) the column.
+local function panel(rows, title)
   return {
     type = "box",
-    frame = widgets.panel("Info", false),
+    -- The kernel offers a wheel tick only to a hit target, and a pane that
+    -- cannot take focus is not one by its rect. An identity makes the body one;
+    -- with no `on_click`, a press there still falls through to text selection.
+    id = NAME,
+    frame = widgets.panel(title or "Info", false),
     children = rows,
   }
 end
@@ -1127,6 +1165,40 @@ local function body(width)
   end
 
   push_quota(rows, width)
+  -- Snapshot-only rendering. Actions/events request trusted host execution;
+  -- absent answers remain pending and old cores stay explicitly unavailable.
+  local configured = snapshot.hosts or {}
+  local page = math.max(1, math.min(state.quota_page or 1, host_quota.pages(configured)))
+  local groups = host_model:read(
+    configured,
+    snapshot.runs or {},
+    math.floor((snapshot.taken_at_ms or 0) / 1000),
+    run ~= nil,
+    page
+  )
+  for _, group in ipairs(groups) do
+    if run and type(run_forget) ~= "function" then
+      group.reading = { status = "unavailable", reason = "host quota API unavailable", rows = {} }
+    end
+    local label = group.host.name:gsub("%c", " ")
+    push_quota(
+      rows,
+      width,
+      group.reading,
+      { "Quota left · remote · " .. label, "Remote · " .. label, label }
+    )
+  end
+  if host_quota.pages(configured) > 1 then
+    rows[#rows + 1] = quota_field(
+      string.format(
+        "Host page %d/%d · quota next/previous in palette",
+        page,
+        host_quota.pages(configured)
+      ),
+      { fg = theme.muted },
+      width
+    )
+  end
 
   -- The kernel publishes a ZEROED machine table before the first sample rather
   -- than omitting it, so `system ~= nil` is not the question. A total memory of
@@ -1150,12 +1222,18 @@ return {
   name = NAME,
   capabilities = { "run" },
   pure = true,
-  -- A session can appear after the reload, and the run needs one.
+  -- A new session also retries the older-core local fallback when needed.
   events = { "interface.reloaded", "session.created" },
   on_event = function()
     refresh_quota()
   end,
-  commands = { { action = "info.quota.refresh", desc = "refresh local account quotas" } },
+  commands = {
+    { action = "info.quota.refresh", desc = "refresh account quotas on all hosts" },
+    { action = "info.scroll.down", desc = "scroll the info panel down a page" },
+    { action = "info.scroll.up", desc = "scroll the info panel up a page" },
+    { action = "info.quota.next", desc = "next quota host page" },
+    { action = "info.quota.previous", desc = "previous quota host page" },
+  },
 
   -- Its own COLUMN, and `layout.lua` places it — which is why installing this
   -- needs the three lines README.md gives you. That edit is not an oversight to
@@ -1200,11 +1278,58 @@ return {
   render = function(ctx)
     -- ctx.width is THIS COLUMN's, not the screen's — which is what every width
     -- budget below is measured against.
-    return panel(body(ctx.width or 0))
+    local rows = body(ctx.width or 0)
+    -- Slice lines as well as nodes: a narrow wrapped row can span the viewport.
+    local height = math.max(1, (ctx.height or 80) - BORDERS)
+    local count = 0
+    for _, row in ipairs(rows) do
+      count = count + (row.len or 0)
+    end
+    scroll_limit, viewport = math.max(0, count - height), height
+    local offset = math.max(0, math.min(state.info_scroll or 0, scroll_limit))
+    local visible, at = {}, 0
+    for _, row in ipairs(rows) do
+      local length = row.len or 0
+      if length > 0 and at + length > offset and at < offset + height then
+        -- Only a row of several lines is cut. A one-line row may hold a single
+        -- span rather than a list of lines (`widgets.divider` does).
+        if length > 1 and row.type == "text" and type(row.text) == "table" then
+          local lines = {}
+          for i = math.max(1, offset - at + 1), math.min(length, offset + height - at) do
+            lines[#lines + 1] = row.text[i]
+          end
+          visible[#visible + 1] = { type = "text", len = #lines, text = lines }
+        else
+          visible[#visible + 1] = row
+        end
+      end
+      at = at + length
+    end
+    visible[#visible + 1] = { type = "text", text = "" }
+    local more = (offset > 0 and "↑" or "") .. (offset < scroll_limit and "↓" or "")
+    return panel(visible, more ~= "" and "Info " .. more or nil)
+  end,
+
+  -- One line per report: a detent is several reports, and a step longer than a
+  -- short column would skip lines nobody could then reach.
+  on_scroll = function(wheel)
+    scroll(wheel.up and -1 or 1)
+    return true
   end,
 
   on_action = function(action)
-    if action == "info.quota.refresh" then
+    if action == "info.scroll.down" or action == "info.scroll.up" then
+      -- A page keeps one line of context, and still moves in a one-line column.
+      local page = math.max(1, viewport - 1)
+      scroll(action == "info.scroll.down" and page or -page)
+      return true
+    elseif action == "info.quota.next" or action == "info.quota.previous" then
+      local pages = host_quota.pages(thurbox.hosts or {})
+      local step = action == "info.quota.next" and 1 or -1
+      state.quota_page = ((state.quota_page or 1) - 1 + step) % pages + 1
+      state.info_scroll = 0
+      return true
+    elseif action == "info.quota.refresh" then
       refresh_quota()
       return true
     elseif action == "info.toggle" then

@@ -1,5 +1,6 @@
 -- Exercise the installed pane against current Thurbox libraries and worker JSON.
 local UI = assert(arg[1], "pass a Thurbox ui/ directory")
+state = {}
 package.path = UI .. "/?.lua;./?.lua;" .. package.path
 package.preload["thurbox-info-panel.lib.quota"] = function()
   return dofile("lib/quota.lua")
@@ -8,6 +9,9 @@ package.preload["thurbox-info-panel.lib.format"] = function()
   return dofile("lib/format.lua")
 end
 -- These fixtures contain ASCII and single-column bars only.
+package.preload["thurbox-info-panel.lib.host_quota"] = function()
+  return dofile("lib/host_quota.lua")
+end
 text = {
   width = function(s)
     local width = 0
@@ -320,7 +324,10 @@ for _, case in ipairs(cases) do
     local asks = 0
     run = not case.untrusted
         and function(key, cmd, opts)
-          assert(key == "quota" and cmd == "quota-axi --json", "portable local command")
+          assert(
+            key == "quota" and cmd == "quota-axi --json --no-credential-refresh",
+            "portable local command"
+          )
           -- Thurbox fails a run with no session before starting it.
           assert(opts.session == "demo", "account quota must run in a local session")
           assert(opts.ttl >= 60 and opts.timeout <= 30)

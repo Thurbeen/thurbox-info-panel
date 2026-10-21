@@ -5,6 +5,7 @@
 -- The section is compared line for line with tests/snapshots/quota-<width>.txt.
 -- `--update` rewrites those files instead; review the diff before committing.
 local UI = assert(arg[1], "pass a Thurbox ui/ directory")
+state = {}
 local UPDATE = arg[2] == "--update"
 package.path = UI .. "/?.lua;./?.lua;" .. package.path
 package.preload["thurbox-info-panel.lib.quota"] = function()
@@ -12,6 +13,9 @@ package.preload["thurbox-info-panel.lib.quota"] = function()
 end
 package.preload["thurbox-info-panel.lib.format"] = function()
   return dofile("lib/format.lua")
+end
+package.preload["thurbox-info-panel.lib.host_quota"] = function()
+  return dofile("lib/host_quota.lua")
 end
 text = {
   width = function(s)

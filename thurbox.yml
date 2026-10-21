@@ -647,3 +647,9 @@ globals:
   run:
     args:
       - type: "..."
+
+  # Optional host-quota prerequisite. Older cores omit it; the pane checks
+  # availability and reports unavailable until the supported API is present.
+  run_forget:
+    args:
+      - type: "..."
