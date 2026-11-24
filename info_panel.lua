@@ -709,7 +709,23 @@ end
 -- All requests originate in actions/events, never in the draw path.
 local parsed_stdout, parsed_stderr, parsed_key, parsed_at, parsed
 local QUOTA_TIMEOUT = 30
-local QUOTA_COMMAND = "quota-axi --json --no-credential-refresh"
+
+local function on_windows()
+  return ((thurbox or {}).platform or {}).os == "windows"
+end
+
+local function quota_command()
+  return on_windows() and host_quota.WINDOWS_COMMAND or host_quota.RESOLVER
+end
+
+local function host_run(target)
+  if target.legacy then
+    local program = target.platform == "windows" and host_quota.WINDOWS_COMMAND
+      or host_quota.RESOLVER
+    return program, "host:" .. target.name
+  end
+  return not on_windows() and host_quota.ssh_command(target.destination) or nil, "local"
+end
 
 --- A session on this machine to run quota-axi in: the selected one when it is
 --- local, else the first local one. Thurbox fails a `run` that names no session,
@@ -734,24 +750,27 @@ local function refresh_quota()
     return
   end
   if type(run_forget) == "function" then
-    local configured = thurbox.hosts or {}
+    local configured = host_quota.targets(thurbox)
     -- The owned snapshot survives some Lua-state resets. Retire obsolete keys
     -- before asking again; the kernel preserves forget/run order and rejects
     -- forgotten late completions. Keys never include a refresh epoch.
     host_model:reconcile(configured, run_forget, thurbox.runs or {})
-    run("quota", QUOTA_COMMAND, { machine = "local", ttl = 60, timeout = QUOTA_TIMEOUT })
+    run("quota", quota_command(), { machine = "local", ttl = 60, timeout = QUOTA_TIMEOUT })
     for _, host in ipairs(configured) do
-      run(host_quota.key(host.name), QUOTA_COMMAND, {
-        machine = "host:" .. host.name,
-        ttl = 60,
-        timeout = QUOTA_TIMEOUT,
-      })
+      local program, machine = host_run(host)
+      if program then
+        run(host_quota.key(host.name), program, {
+          machine = machine,
+          ttl = 60,
+          timeout = QUOTA_TIMEOUT,
+        })
+      end
     end
   else
     -- Older cores keep the session-based local path and honest remote status.
     local session = local_session()
     if session then
-      run("quota", QUOTA_COMMAND, { session = session.id, ttl = 60, timeout = QUOTA_TIMEOUT })
+      run("quota", quota_command(), { session = session.id, ttl = 60, timeout = QUOTA_TIMEOUT })
     end
   end
 end
@@ -790,6 +809,12 @@ local function quota_reading()
     parsed_key, parsed_stdout, parsed_stderr, parsed_at = key, stdout, stderr, minute
   end
   return parsed
+end
+
+local INSTALL_HINT = "npm install -g quota-axi"
+
+local function missing_text(reading)
+  return reading.reason and (reading.reason .. " · " .. INSTALL_HINT) or INSTALL_HINT
 end
 
 local function quota_field(value, style, width)
@@ -894,7 +919,7 @@ local function push_quota(rows, width, reading, titles, state)
   end
   section(rows, titles or { "Quota left · local accounts", "Quota left" }, width, state or age)
   if state and reading.status ~= "ready" then
-    local why = reading.status == "missing" and "npm install -g quota-axi" or reading.reason
+    local why = reading.status == "missing" and missing_text(reading) or reading.reason
     if why then
       local room = math.max(1, inner_width(width) - #INDENT)
       rows[#rows + 1] = plain_row(
@@ -908,11 +933,12 @@ local function push_quota(rows, width, reading, titles, state)
     local messages = {
       untrusted = "trust run in Interface settings",
       loading = "loading",
-      missing = "npm install -g quota-axi",
       unavailable = "unavailable",
     }
     local message = messages[reading.status] or "unavailable"
-    if reading.reason then
+    if reading.status == "missing" then
+      message = missing_text(reading)
+    elseif reading.reason then
       message = message .. " · " .. reading.reason
     end
     rows[#rows + 1] = quota_field(message, { fg = theme.muted }, width)
@@ -1181,7 +1207,7 @@ local function body(width)
   push_quota(rows, width)
   -- Snapshot-only rendering. Actions/events request trusted host execution;
   -- absent answers remain pending and old cores stay explicitly unavailable.
-  local configured = snapshot.hosts or {}
+  local configured = host_quota.targets(snapshot)
   local groups = host_model:read(
     configured,
     snapshot.runs or {},
@@ -1191,6 +1217,11 @@ local function body(width)
   for _, group in ipairs(groups) do
     if run and type(run_forget) ~= "function" then
       group.drawn = { status = "unavailable", reason = "host quota API unavailable", rows = {} }
+      group.state = "unsupported"
+    elseif run and not host_run(group.host) then
+      local reason = on_windows() and "remote quota needs thurbox on a POSIX machine"
+        or "host name cannot be reached by ssh"
+      group.drawn = { status = "unavailable", reason = reason, rows = {} }
       group.state = "unsupported"
     end
     local label = group.host.name:gsub("%c", " ")

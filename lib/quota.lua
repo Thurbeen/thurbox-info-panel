@@ -221,8 +221,12 @@ function quota.parse(answer, now, timeout)
     local why = type(answer.error) == "string" and answer.error:gsub("%s+", " ") or nil
     return unavailable(why or "not finished")
   end
-  if answer.status == 127 or answer.status == 9009 then
-    return { status = "missing", rows = {} }
+  local stderr_line = first_line(answer.stderr)
+  if
+    (answer.status == 127 or answer.status == 9009)
+    and (not stderr_line or stderr_line:find("quota-axi", 1, true))
+  then
+    return { status = "missing", reason = stderr_line, rows = {} }
   end
   if answer.timed_out then
     return unavailable(timeout and ("timed out after " .. timeout .. "s") or "timed out")
