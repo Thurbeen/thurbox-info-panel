@@ -226,15 +226,17 @@ store = { selected = "remote-session" }
 local configured = {
   { name = "local", platform = "posix" },
   { name = "mux/box", platform = "posix" },
-  { name = "session", platform = "windows" },
-  { name = "offline", platform = "posix" },
-  { name = "pending", platform = "posix" },
+  { name = "mux/session", platform = "posix" },
+  { name = "mux/offline", platform = "posix" },
+  { name = "mux/pending", platform = "posix" },
+  { name = "vm/elsewhere", platform = "posix" },
 }
 local remote_report = report:gsub('"percentRemaining": 80', '"percentRemaining": 77')
 thurbox = {
   taken_at_ms = 1791374400000,
   sessions = {},
   hosts = configured,
+  fleets = { { name = "local", transport = "local Fleet", remote = false } },
   runs = { [host_quota.key("retired")] = { state = "pending" } },
   registry = { settings = {} },
   theme = { roles = {} },
@@ -279,6 +281,7 @@ local adapter_pane = dofile(PANE)
 adapter_pane.on_action("info.quota.refresh")
 assert(requested.quota == "local", "local quota fetch missing without sessions")
 assert(not requested[host_quota.key("local")], "the local place is not a remote host")
+assert(not requested[host_quota.key("elsewhere")], "only mux places are reached over ssh")
 for _, host in ipairs({ "box", "session", "offline", "pending" }) do
   assert(requested[host_quota.key(host)] == host, "configured host was not fetched: " .. host)
 end
@@ -318,4 +321,20 @@ assert(
   "the selector core still demanded a local session"
 )
 assert(sessionless_text:find("loading", 1, true), "sessionless local quota was not pending")
+-- A core from before Fleet keeps its own host transport.
+thurbox.fleets = nil
+thurbox.hosts = {
+  { name = "wsl-box", platform = "posix" },
+  { name = "win-box", platform = "windows" },
+}
+local legacy = {}
+run = function(key, program, opts)
+  legacy[key] = { program = program, machine = opts.machine }
+end
+dofile(PANE).on_action("info.quota.refresh")
+local posix_host = legacy[host_quota.key("wsl-box")]
+assert(posix_host.machine == "host:wsl-box", "a pre-Fleet host keeps the core transport")
+assert(posix_host.program == host_quota.RESOLVER, "a pre-Fleet POSIX host resolves quota-axi")
+local windows_host = legacy[host_quota.key("win-box")]
+assert(windows_host.program == host_quota.WINDOWS_COMMAND, "a Windows host runs it through cmd")
 print("Panel host adapter passed: ssh per host, no sessions, distinct readings, reload retirement")

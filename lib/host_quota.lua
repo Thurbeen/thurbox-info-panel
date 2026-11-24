@@ -75,9 +75,19 @@ end
 
 --- The machines to read quota on: each non-local Fleet place (`mux/<name>`
 --- reached as `ssh <name>`) and each Fleet reached over ssh, one per machine.
---- A Fleet's own destination wins, since it carries the user.
+--- A Fleet's own destination wins, since it carries the user. A core from
+--- before Fleet publishes no `fleets`: its `hosts.toml` hosts are `legacy`,
+--- reached through its own transport.
 function hosts.targets(snapshot)
   local targets, index = {}, {}
+  if snapshot.fleets == nil then
+    for _, host in ipairs(snapshot.hosts or {}) do
+      if type(host) == "table" and type(host.name) == "string" then
+        targets[#targets + 1] = { name = host.name, platform = host.platform, legacy = true }
+      end
+    end
+    return targets
+  end
   local function add(name, destination)
     if not name or name == "" then
       return
@@ -95,8 +105,8 @@ function hosts.targets(snapshot)
     local dynamic = type(place) == "table"
       and type(place.detail) == "string"
       and place.detail:find("new machine per session", 1, true)
-    if name and name ~= "local" and not dynamic then
-      local machine = name:match("([^/]+)$")
+    local machine = name and not dynamic and name:match("^mux/([^/]+)$")
+    if machine then
       add(machine, machine)
     end
   end

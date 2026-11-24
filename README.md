@@ -131,10 +131,10 @@ Every other machine your sessions can run on gets its own block below the local
 one, **Quota left · remote · <host>**; scroll the panel to reach the later ones.
 The machines come from two places, one block per machine:
 
-- each Fleet place other than `local` (`mux/sputnik-2` is reached as
-  `ssh sputnik-2`), except a place that makes a new machine per session;
+- each `mux/<name>` Fleet place (`mux/devbox` is reached as `ssh devbox`),
+  except `local` and a place that makes a new machine per session;
 - each Fleet in Thurbox's `[fleets]` settings reached over ssh
-  (`transport = { ssh = "magicletur@sputnik-2" }`), whose destination wins over
+  (`transport = { ssh = "me@devbox" }`), whose destination wins over
   a place for the same machine.
 
 Thurbox runs a plugin's program on this machine only, so the panel reaches a
@@ -178,8 +178,12 @@ next refresh forgets its answer and any queued request.
 A command already running on a host is not cancelled; Thurbox's own timeout and
 concurrency limits bound it.
 
+On Thurbox before Fleet, which publishes no Fleets, each host in its `hosts.toml`
+is read through Thurbox's own SSH/WSL transport (`machine = "host:<name>"`)
+instead, with the same quota-axi lookup.
+
 Remote hosts need **Thurbox 2.66.0 or later**, which adds
-`machine = "local"` and `run_forget`
+`machine = "local"`, `machine = "host:<name>"` and `run_forget`
 ([#1547](https://github.com/Thurbeen/thurbox/pull/1547)). Older Thurbox keeps the previous behaviour: local accounts are read
 in the selected session when it is local, otherwise in the first local one,
 **needs a local session** is shown when there is none, and each host block says

@@ -178,16 +178,16 @@ write(
   "+x"
 )
 local remote_snapshot = snapshot({
-  hosts = { { name = "local" }, { name = "mux/sputnik-2" } },
+  hosts = { { name = "local" }, { name = "mux/devbox" } },
   fleets = {
     { name = "local", transport = "local Fleet", remote = false },
-    { name = "sputnik-2", transport = "ssh magicletur@sputnik-2", remote = true },
+    { name = "devbox", transport = "ssh me@devbox", remote = true },
     { name = "evil", transport = "ssh $(touch${IFS}pwned)", remote = true },
   },
 })
 pane, asked = pane_with(remote_snapshot)
-local key = "quota.host:sputnik-2"
-assert(asked[key], "no quota asked for sputnik-2")
+local key = "quota.host:devbox"
+assert(asked[key], "no quota asked for devbox")
 assert(asked[key].opts.machine == "local", "a remote host is reached by a local ssh run")
 local count = 0
 for k in pairs(asked) do
@@ -208,9 +208,9 @@ thurbox.runs[key] = kernel_run(wrapper .. asked[key].program, bare)
 local ssh_args = read(args_file)
 assert(ssh_args:find("BatchMode=yes", 1, true), "ssh must not prompt: " .. ssh_args)
 assert(ssh_args:find("ConnectTimeout=10", 1, true), "ssh needs a connect timeout: " .. ssh_args)
-assert(ssh_args:find("\nmagicletur@sputnik%-2\n"), "ssh destination: " .. ssh_args)
+assert(ssh_args:find("\nme@devbox\n", 1, true), "ssh destination: " .. ssh_args)
 screen = render(pane)
-assert(screen:find("sputnik-2", 1, true), "remote host not labelled:\n" .. screen)
+assert(screen:find("devbox", 1, true), "remote host not labelled:\n" .. screen)
 assert(not screen:find("evil", 1, true), "an unsafe destination became a host:\n" .. screen)
 local _, codex = screen:gsub("codex", "")
 assert(codex == 2, "expected local and remote quotas:\n" .. screen)

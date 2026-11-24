@@ -718,8 +718,13 @@ local function quota_command()
   return on_windows() and host_quota.WINDOWS_COMMAND or host_quota.RESOLVER
 end
 
-local function host_command(target)
-  return not on_windows() and host_quota.ssh_command(target.destination) or nil
+local function host_run(target)
+  if target.legacy then
+    local program = target.platform == "windows" and host_quota.WINDOWS_COMMAND
+      or host_quota.RESOLVER
+    return program, "host:" .. target.name
+  end
+  return not on_windows() and host_quota.ssh_command(target.destination) or nil, "local"
 end
 
 --- A session on this machine to run quota-axi in: the selected one when it is
@@ -752,10 +757,10 @@ local function refresh_quota()
     host_model:reconcile(configured, run_forget, thurbox.runs or {})
     run("quota", quota_command(), { machine = "local", ttl = 60, timeout = QUOTA_TIMEOUT })
     for _, host in ipairs(configured) do
-      local program = host_command(host)
+      local program, machine = host_run(host)
       if program then
         run(host_quota.key(host.name), program, {
-          machine = "local",
+          machine = machine,
           ttl = 60,
           timeout = QUOTA_TIMEOUT,
         })
@@ -1213,7 +1218,7 @@ local function body(width)
     if run and type(run_forget) ~= "function" then
       group.drawn = { status = "unavailable", reason = "host quota API unavailable", rows = {} }
       group.state = "unsupported"
-    elseif run and not host_command(group.host) then
+    elseif run and not host_run(group.host) then
       local reason = on_windows() and "remote quota needs thurbox on a POSIX machine"
         or "host name cannot be reached by ssh"
       group.drawn = { status = "unavailable", reason = reason, rows = {} }
