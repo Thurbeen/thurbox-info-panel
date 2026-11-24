@@ -43,7 +43,7 @@ selected light or dark palette.
 ### Account quotas
 
 Install [quota-axi](https://github.com/kunchenguid/quota-axi), **0.1.58 or later**
-(Node.js 22.19 or later), on PATH. On Windows, use native Node.js and npm:
+(Node.js 22.19 or later). On Windows, use native Node.js and npm:
 
 ```sh
 npm install -g quota-axi
@@ -58,7 +58,15 @@ palette's **refresh account quotas on all hosts** still refresh the panel.
 **Grant run once:** `Ctrl+,` → `]` (Interface) → select the info-panel file →
 `t`. Until you grant it, the panel says **trust run in Interface settings** and
 executes nothing. After granting, press F2 twice or use the refresh command.
-A missing CLI shows `npm install -g quota-axi`; a pending fetch shows **loading**.
+A pending fetch shows **loading**.
+
+Thurbox runs plugin programs with `sh -c` and its own PATH, which rarely holds a
+Node version manager's globals (fnm, nvm, volta). So the panel looks for
+quota-axi the way your shell does: on PATH first, then through `$SHELL` as a
+login shell (`-lc`), then as an interactive one (`-ilc`), and runs it beside the
+`node` it was installed with. Only when all three fail does it say **quota-axi
+not found on PATH, nor by <shell> as a login or interactive shell ·
+npm install -g quota-axi**. Any other failure says what failed instead.
 
 ```text
 Thurbox heartbeat (once/minute)
@@ -119,21 +127,37 @@ snapshot are marked stale. Account emails from the report are not displayed.
 
 ### Remote host quotas
 
-Every host in Thurbox's `hosts.toml` gets its own block below the local one,
-**Quota left · remote · <host>**, in `hosts.toml` order, however many there
-are; scroll the panel to reach the later ones. Each refresh asks this machine
-and every configured host at once, each with its own 30-second timeout, with
-`quota-axi --json --no-credential-refresh`, so a quota refresh never renews a
-credential. Install quota-axi on each host the same way.
+Every other machine your sessions can run on gets its own block below the local
+one, **Quota left · remote · <host>**; scroll the panel to reach the later ones.
+The machines come from two places, one block per machine:
+
+- each Fleet place other than `local` (`mux/sputnik-2` is reached as
+  `ssh sputnik-2`), except a place that makes a new machine per session;
+- each Fleet in Thurbox's `[fleets]` settings reached over ssh
+  (`transport = { ssh = "magicletur@sputnik-2" }`), whose destination wins over
+  a place for the same machine.
+
+Thurbox runs a plugin's program on this machine only, so the panel reaches a
+remote machine with a local `ssh -o BatchMode=yes -o ConnectTimeout=10 <host>`,
+which reads your `~/.ssh/config` and never prompts. It sends the same quota-axi
+lookup as above to `sh -s` there, so quota-axi is found there the way that
+machine's shell finds it. Install quota-axi on each machine the same way. A host
+name holding anything but letters, digits, `.`, `_`, `-` and one `@` is never
+put in a command; its block says **host name cannot be reached by ssh**.
 
 ```text
 refresh action → run_forget(retired host keys)
-  → run("quota",            machine = "local")
-  → run("quota.host:<name>", machine = "host:<name>")  one per configured host
-  → Thurbox's own SSH/WSL transport → cached answers → pure render
+  → run("quota",            machine = "local")  quota-axi lookup
+  → run("quota.host:<name>", machine = "local")  ssh <host> sh -s, one per host
+  → cached answers (60-second TTL each) → pure render
 ```
 
-Hosts need no session and no `share_sessions`. Readings are never pooled: each
+Each refresh asks this machine and every host at once, each with its own
+30-second timeout, with `quota-axi --json --no-credential-refresh`, so a quota
+refresh never renews a credential. Remote quota needs ssh, so on Windows each
+host block says so instead.
+
+Readings are never pooled: each
 host's block shows only that host's report. Its title line ends in the host's
 state, so a long list reads at a glance:
 
@@ -141,7 +165,7 @@ state, so a long list reads at a glance:
 | --- | --- |
 | **ok** | a fresh report; its gauges follow |
 | **checking** | the first answer is still on its way |
-| **offline** | unreachable or no answer within the timeout |
+| **offline** | ssh could not connect (exit 255) or no answer within the timeout |
 | **auth needed** | reachable, but no provider is logged in |
 | **stale · 3h old** | the host's report is older than five minutes |
 | **no quota-axi** | quota-axi is not installed there |
@@ -149,13 +173,13 @@ state, so a long list reads at a glance:
 
 A host that is not ok takes one line under its title, saying why, and holds up
 none of the others. A host that answered once keeps its last gauges when it
-drops off, as **offline · 12m old**. When a host leaves `hosts.toml`, the next refresh
-forgets its answer and any queued request (Thurbox reads `hosts.toml` at start).
+drops off, as **offline · 12m old**. When a host leaves Fleet or `[fleets]`, the
+next refresh forgets its answer and any queued request.
 A command already running on a host is not cancelled; Thurbox's own timeout and
 concurrency limits bound it.
 
-Remote hosts need **Thurbox 2.66.0 or later**, which adds the
-`machine = "host:<name>"` selector and `run_forget`
+Remote hosts need **Thurbox 2.66.0 or later**, which adds
+`machine = "local"` and `run_forget`
 ([#1547](https://github.com/Thurbeen/thurbox/pull/1547)). Older Thurbox keeps the previous behaviour: local accounts are read
 in the selected session when it is local, otherwise in the first local one,
 **needs a local session** is shown when there is none, and each host block says

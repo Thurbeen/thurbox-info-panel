@@ -113,4 +113,9 @@ assert(
     == "unsupported schemaVersion 4"
 )
 assert(q.parse({ state = "done", status = 127, stdout = "" }, now).status == "missing")
+local lost = q.parse({ state = "done", status = 127, stderr = "sh: 1: quota-axi: not found" }, now)
+assert(lost.status == "missing" and lost.reason == "sh: 1: quota-axi: not found")
+local no_ssh = q.parse({ state = "done", status = 127, stderr = "sh: 1: ssh: not found" }, now)
+assert(no_ssh.status == "unavailable", "only quota-axi itself is reported missing")
+assert(no_ssh.reason == "exit 127: sh: 1: ssh: not found", no_ssh.reason)
 print("Quota contract tests passed")

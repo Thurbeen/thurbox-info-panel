@@ -29,6 +29,87 @@ function hosts.key(name)
   return KEY_PREFIX .. name
 end
 
+local QUOTA_ARGS = "--json --no-credential-refresh"
+
+--- A POSIX sh script that runs quota-axi wherever the user's shell would find
+--- it. Holds no single quote, so it can travel single-quoted to another machine.
+hosts.RESOLVER = table.concat({
+  "if ! command -v quota-axi >/dev/null 2>&1; then",
+  "  for flags in -lc -ilc; do",
+  '    found=$("${SHELL:-/bin/sh}" "$flags" "command -v quota-axi" </dev/null 2>/dev/null | tail -n 1)',
+  '    case $found in /*) PATH="${found%/*}:$PATH"; export PATH; break;; esac',
+  "  done",
+  "fi",
+  "command -v quota-axi >/dev/null 2>&1 || {",
+  '  echo "quota-axi not found on PATH, nor by ${SHELL:-/bin/sh} as a login or interactive shell" >&2',
+  "  exit 127",
+  "}",
+  "exec quota-axi " .. QUOTA_ARGS,
+}, "\n")
+
+hosts.WINDOWS_COMMAND = "quota-axi " .. QUOTA_ARGS
+
+local SSH_NAME = "^[%w_][%w._-]*$"
+
+local function ssh_safe(destination)
+  local user, machine = destination:match("^([^@]*)@(.*)$")
+  if user then
+    return user:match(SSH_NAME) ~= nil and machine:match(SSH_NAME) ~= nil
+  end
+  return destination:match(SSH_NAME) ~= nil
+end
+
+--- The local program that runs the resolver on `destination` over ssh. Only a
+--- destination made of name characters is accepted, so nothing in it is ever
+--- shell syntax; anything else returns nil.
+function hosts.ssh_command(destination)
+  if type(destination) ~= "string" or not ssh_safe(destination) then
+    return nil
+  end
+  return "printf '%s\\n' '"
+    .. hosts.RESOLVER
+    .. "' | ssh -o BatchMode=yes -o ConnectTimeout=10 '"
+    .. destination
+    .. "' sh -s"
+end
+
+--- The machines to read quota on: each non-local Fleet place (`mux/<name>`
+--- reached as `ssh <name>`) and each Fleet reached over ssh, one per machine.
+--- A Fleet's own destination wins, since it carries the user.
+function hosts.targets(snapshot)
+  local targets, index = {}, {}
+  local function add(name, destination)
+    if not name or name == "" then
+      return
+    end
+    local at = index[name]
+    if not at then
+      index[name] = #targets + 1
+      targets[#targets + 1] = { name = name, destination = destination }
+    elseif destination:find("@", 1, true) then
+      targets[at].destination = destination
+    end
+  end
+  for _, place in ipairs(snapshot.hosts or {}) do
+    local name = type(place) == "table" and type(place.name) == "string" and place.name
+    local dynamic = type(place) == "table"
+      and type(place.detail) == "string"
+      and place.detail:find("new machine per session", 1, true)
+    if name and name ~= "local" and not dynamic then
+      local machine = name:match("([^/]+)$")
+      add(machine, machine)
+    end
+  end
+  for _, fleet in ipairs(snapshot.fleets or {}) do
+    local transport = type(fleet) == "table" and fleet.transport
+    local destination = type(transport) == "string" and transport:match("^ssh (%S+)$")
+    if destination and ssh_safe(destination) then
+      add(destination:match("([^@]+)$"), destination)
+    end
+  end
+  return targets
+end
+
 -- Reject oversized or deeply nested output before invoking the JSON decoder.
 -- Brackets inside JSON strings do not contribute to nesting depth.
 local function bounded(output)

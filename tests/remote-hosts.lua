@@ -225,6 +225,7 @@ state = {}
 store = { selected = "remote-session" }
 local configured = {
   { name = "local", platform = "posix" },
+  { name = "mux/box", platform = "posix" },
   { name = "session", platform = "windows" },
   { name = "offline", platform = "posix" },
   { name = "pending", platform = "posix" },
@@ -247,33 +248,39 @@ run_forget = function(key)
 end
 run = function(key, program, opts)
   assert(
-    program == "quota-axi --json --no-credential-refresh",
+    program:find("quota-axi --json --no-credential-refresh", 1, true),
     "quota refresh may not renew credentials"
   )
   assert(opts.session == nil, "machine quotas must not depend on a live session")
+  assert(opts.machine == "local", "Thurbox runs plugin programs on this machine only")
   assert(opts.ttl >= 60 and opts.timeout <= 30)
-  requested[key] = opts.machine
+  local host = key:match("^quota%.host:(.+)$")
+  if host then
+    assert(
+      program:find("| ssh -o BatchMode=yes -o ConnectTimeout=10 '" .. host .. "' sh -s", 1, true),
+      "a host is reached over ssh"
+    )
+  end
+  requested[key] = host or "local"
   order[#order + 1] = "run:" .. key
-  if opts.machine == "local" then
+  if not host then
     thurbox.runs[key] = { state = "done", status = 0, stdout = report }
-  elseif opts.machine == "host:local" or opts.machine == "host:session" then
+  elseif host == "box" or host == "session" then
     thurbox.runs[key] = { state = "done", status = 0, stdout = remote_report }
-  elseif opts.machine == "host:offline" then
-    thurbox.runs[key] = { state = "failed", error = "fixture host unavailable" }
-  elseif opts.machine == "host:pending" then
+  elseif host == "offline" then
+    thurbox.runs[key] = { state = "done", status = 255, stderr = "ssh: connect to host offline" }
+  elseif host == "pending" then
     thurbox.runs[key] = { state = "pending" }
   else
-    error("unexpected target " .. tostring(opts.machine))
+    error("unexpected host " .. host)
   end
 end
 local adapter_pane = dofile(PANE)
 adapter_pane.on_action("info.quota.refresh")
 assert(requested.quota == "local", "local quota fetch missing without sessions")
-for _, host in ipairs(configured) do
-  assert(
-    requested[host_quota.key(host.name)] == "host:" .. host.name,
-    "configured host was not fetched"
-  )
+assert(not requested[host_quota.key("local")], "the local place is not a remote host")
+for _, host in ipairs({ "box", "session", "offline", "pending" }) do
+  assert(requested[host_quota.key(host)] == host, "configured host was not fetched: " .. host)
 end
 assert(
   order[1] == "forget:" .. host_quota.key("retired"),
@@ -291,15 +298,15 @@ assert(
   result:find("77%", 1, true) and result:find("80%", 1, true),
   "host readings were substituted or pooled"
 )
-assert(result:find("fixture host unavailable", 1, true) and result:find("checking", 1, true))
+assert(result:find("offline", 1, true) and result:find("checking", 1, true))
 -- A VM rebuild loses private state; queued and cached obsolete answers still retire.
-thurbox.hosts = { configured[1] }
+thurbox.hosts = { configured[1], configured[2] }
 requested, order = {}, {}
 adapter_pane = dofile(PANE)
 adapter_pane.on_event("interface.reloaded")
 assert(not thurbox.runs[host_quota.key("pending")], "reload leaked an obsolete pending host key")
 assert(not thurbox.runs[host_quota.key("session")], "reload leaked an obsolete cached host key")
-assert(requested.quota == "local" and requested[host_quota.key("local")] == "host:local")
+assert(requested.quota == "local" and requested[host_quota.key("box")] == "box")
 -- On a core with the selector the local quota needs no session: with none
 -- open and no answer yet it is loading, never "needs a local session".
 thurbox.sessions, thurbox.runs, store = {}, {}, {}
@@ -311,6 +318,4 @@ assert(
   "the selector core still demanded a local session"
 )
 assert(sessionless_text:find("loading", 1, true), "sessionless local quota was not pending")
-print(
-  "Panel host adapter passed: real selectors, no sessions, distinct readings, reload retirement"
-)
+print("Panel host adapter passed: ssh per host, no sessions, distinct readings, reload retirement")
