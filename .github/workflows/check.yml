@@ -17,7 +17,7 @@ jobs:
             curl -fsSL "$1" -o "$RUNNER_TEMP/tools/$2"
             echo "$3  $RUNNER_TEMP/tools/$2" | sha256sum -c -
           }
-          fetch https://github.com/Thurbeen/thurbox/releases/download/v2.51.7/thurbox-v2.51.7-x86_64-unknown-linux-gnu.tar.gz thurbox.tar.gz f795a1c2009fed55b282fb340a91e15fb9b989bf91ff4fa20838b08fcc6588bb
+          fetch https://github.com/Thurbeen/thurbox/releases/download/v3.24.0/thurbox-v3.24.0-x86_64-unknown-linux-gnu.tar.gz thurbox.tar.gz 0c22145a3bd601095db3abffc041beab2a4907eb88e4f21085e28b48a6432390
           tar -xzf "$RUNNER_TEMP/tools/thurbox.tar.gz" -C "$RUNNER_TEMP/tools"
           fetch https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip stylua.zip bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab
           unzip -q "$RUNNER_TEMP/tools/stylua.zip" -d "$RUNNER_TEMP/tools"
@@ -37,11 +37,11 @@ jobs:
         shell: pwsh
         run: |
           $archive = "$env:RUNNER_TEMP/thurbox.zip"
-          Invoke-WebRequest https://github.com/Thurbeen/thurbox/releases/download/v2.51.7/thurbox-v2.51.7-x86_64-pc-windows-msvc.zip -OutFile $archive
-          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne 'df0a9fce26a1a5fb06bc46d6c5017d6f1a675c6a780907efd5dafb4aa333f94c') { throw 'checksum mismatch' }
+          Invoke-WebRequest https://github.com/Thurbeen/thurbox/releases/download/v3.24.0/thurbox-v3.24.0-x86_64-pc-windows-msvc.zip -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '60193b5bbf7f6b1099ffb06476a9421c836a0cf82b1b195b5a12628960767369') { throw 'checksum mismatch' }
           Expand-Archive $archive "$env:RUNNER_TEMP/thurbox"
           "$env:RUNNER_TEMP/thurbox" | Out-File -FilePath $env:GITHUB_PATH -Append
-      - name: Check native plugin loading and placement
+      - name: Check native mod loading and placement
         run: |
           python scripts/interface.py .cache/check
           node --check extension/refresh.mjs

@@ -87,7 +87,7 @@ for i = 1, 1000 do
   model:read({ { name = "replaced-" .. i } }, {}, now, true)
 end
 collectgarbage("collect")
-assert(collectgarbage("count") < baseline + 64, "host churn retained plugin memory")
+assert(collectgarbage("count") < baseline + 64, "host churn retained mod memory")
 assert(#model:read({}, runs, now, true) == 0, "removed hosts must discard obsolete readings")
 print("Host quota fixtures passed: identity, failures, stale data, memory")
 
@@ -122,13 +122,13 @@ end
 lifecycle:reconcile({}, forget)
 assert(next(retained) == nil and forgotten == 2001)
 lifecycle:reconcile({}, forget)
--- A different plugin's keyspace is not passed to the forgetting callback.
+-- A different mod's keyspace is not passed to the forgetting callback.
 lifecycle:reconcile({ { name = "replacement" } }, function()
   error("a retired key survived empty reconciliation")
 end)
 print("Host key reconciliation passed: repeated churn, retirement and bounded desired state")
 
--- VM rebuilds lose the private desired map while the surviving plugin path
+-- VM rebuilds lose the private desired map while the surviving mod path
 -- can still own answers/queued asks in the kernel snapshot.
 local snapshot = {
   quota = { state = "done", status = 0 },

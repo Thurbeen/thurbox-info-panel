@@ -234,7 +234,7 @@ function hosts.new()
     for key in pairs(self.desired) do
       retire(key)
     end
-    -- The kernel can retain this plugin's answers across a Lua VM rebuild.
+    -- The kernel can retain this mod's answers across a Lua VM rebuild.
     -- Recover retired host keys from its owned snapshot, including pending
     -- asks, without touching the local quota or other command namespaces.
     for key in pairs(answers or {}) do
