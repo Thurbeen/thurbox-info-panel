@@ -17,6 +17,7 @@ lua tests/resolve.lua "$UI"
 lua tests/many-hosts.lua "$UI"
 lua tests/scroll.lua "$UI"
 lua tests/snapshot.lua "$UI"
+lua tests/runtime.lua "$UI"
 for scenario in full no-session bare; do
   for width in 28 36 44 80; do
     lua dev/preview.lua "$UI" "$width" "$scenario" >/dev/null

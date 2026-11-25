@@ -471,7 +471,24 @@ end
 
 -- ── sections ────────────────────────────────────────────────────────────────
 
---- Name, status, agent, and the optional parent / host / activity / signal rows.
+local function places_of(fleet_name)
+  for _, fleet in ipairs(thurbox.fleets or {}) do
+    if fleet.name == fleet_name then
+      return fleet.places or {}
+    end
+  end
+  return thurbox.hosts or {}
+end
+
+local function place_detail(session)
+  for _, place in ipairs(places_of(session.fleet)) do
+    if place.name == session.place then
+      return place.detail
+    end
+  end
+  return session.place
+end
+
 local function push_session(rows, session, parent_name, width)
   rows[#rows + 1] = field("Name:", session.name or "", { fg = theme.text }, width)
 
@@ -497,9 +514,10 @@ local function push_session(rows, session, parent_name, width)
     rows[#rows + 1] = field("Host:", "⇅ " .. session.host, { fg = theme.accent }, width)
   end
 
-  -- Why this session's terminal is not live, when it is not. v1 had no such row
-  -- because a v1 session could not be a placeholder; an unreachable host is a
-  -- state the panel should name rather than leave as a grey dot.
+  if session.place then
+    rows[#rows + 1] = field("Runtime:", place_detail(session), { fg = theme.secondary }, width)
+  end
+
   if session.attach_error then
     rows[#rows + 1] = field("Detached:", session.attach_error, { fg = theme.bad }, width)
   end
