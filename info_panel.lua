@@ -480,13 +480,21 @@ local function places_of(fleet_name)
   return thurbox.hosts or {}
 end
 
-local function place_detail(session)
-  for _, place in ipairs(places_of(session.fleet)) do
-    if place.name == session.place then
-      return place.detail
+local function place_row(places, name)
+  for _, place in ipairs(places) do
+    if place.name == name then
+      return place
     end
   end
-  return session.place
+end
+
+local function place_detail(session)
+  local places = places_of(session.fleet)
+  local row = place_row(places, session.place)
+  if not row and session.place:match("^[^/]+/local$") then
+    row = place_row(places, "local")
+  end
+  return row and row.detail or session.place
 end
 
 local function push_session(rows, session, parent_name, width)

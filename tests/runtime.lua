@@ -40,6 +40,7 @@ local LOCAL_PLACES = {
 local cases = {
   { name = "default runtime", place = "local", want = "this machine (mux)" },
   { name = "another runtime here", place = "herdr/local", want = "this machine (herdr)" },
+  { name = "the default runtime by id", place = "mux/local", want = "this machine (mux)" },
   { name = "a place elsewhere", place = "mux/devbox", host = "mux/devbox", want = "a mux place" },
   { name = "places not answered yet", place = "herdr/local", places = false, want = "herdr/local" },
   {
