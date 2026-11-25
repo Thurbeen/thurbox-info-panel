@@ -1,4 +1,4 @@
-# Static analysis for the pane, against the plugin VM's real standard library.
+# Static analysis for the pane, against the mod VM's real standard library.
 #
 # `std` names `thurbox.yml`, vendored from the thurbox repository: it declares
 # the five stdlib tables the kernel grants plus the globals it injects, and
@@ -17,7 +17,7 @@ std = "thurbox"
 exclude = ["dev/*.lua", "tests/*.lua", ".cache/**"]
 
 [lints]
-# A plugin is one file returning one table; the kernel calls its fields.
+# A mod is one file returning one table; the kernel calls its fields.
 unused_variable = "warn"
 shadowing = "allow"
 almost_swapped = "deny"

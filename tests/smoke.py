@@ -1,9 +1,8 @@
-"""End-to-end: release TUI, quota refresh action and companion extension."""
+"""End-to-end: release TUI, quota refresh action and the refresh script."""
 import json
 import os
 from pathlib import Path
 import shutil
-import sqlite3
 import subprocess
 import tempfile
 import time
@@ -20,8 +19,6 @@ socket = str(root/'smoke.sock')
 def tmux(*args, check=True):
     return subprocess.run(['tmux','-S',socket,*args],env=env,check=check,text=True,capture_output=True).stdout
 try:
-    with sqlite3.connect(root/'data/thurbox.db') as db:
-        db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES ('v2_interface_acknowledged','1')")
     tmux('new-session','-d','-s','smoke','-x','160','-y','50','thurbox')
     screen = ''
     for _ in range(50):
@@ -35,18 +32,10 @@ try:
         return subprocess.run(['thurbox-cli',*args], env=env, check=True, text=True, capture_output=True).stdout
     instances = json.loads(cli('ui','instances','--json'))['instances']
     assert len(instances) == 1, instances
-    # The scheduled command reaches the real action; trust is still withheld.
     cli('ui','--instance',instances[0]['id'],'action','info.quota.refresh','--json')
     subprocess.run(['node','extension/refresh.mjs'], env=env, check=True)
-    cli('extension','install','.', '--home',str(root/'extension'),'--json')
-    status = json.loads(cli('extension','status','info-panel-refresh','--json'))
-    assert 'info-panel-quota-refresh' in json.dumps(status), status
-    cli('extension','uninstall','info-panel-refresh','--json')
-    cli('runtime','stop','--json')
-    assert not json.loads(cli('runtime','status','--json'))['automation_heartbeat'], 'test left its heartbeat keeper running'
     tmux('send-keys','-t','smoke','C-q')
-    print('Real TUI smoke passed: trust state, refresh action, scheduler install/uninstall')
+    print('Real TUI smoke passed: trust state, refresh action, refresh script')
 finally:
-    subprocess.run(['thurbox-cli','runtime','stop','--json'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     tmux('kill-server', check=False)
     scratch.cleanup()

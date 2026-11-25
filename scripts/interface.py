@@ -20,20 +20,19 @@ for name, suffix in {
 }.items():
     os.environ[name] = str(root / suffix)
     (root / suffix).mkdir(exist_ok=True)
-subprocess.run(["thurbox-cli", "plugin", "install", str(repo), "--text"], check=True)
+subprocess.run(["thurbox-cli", "mod", "install", str(repo), "--text"], check=True)
 ui = root / "ui"
-(ui / "plugins/30_info_panel.lua").unlink(missing_ok=True)
-(ui / "plugins.lock").unlink(missing_ok=True)
+(ui / "mods/30_info_panel.lua").unlink(missing_ok=True)
+(ui / "mods.lock").unlink(missing_ok=True)
 payload = ui / "thurbox-info-panel"
 payload.mkdir(exist_ok=True)
-for name in ("info_panel.lua", "plugin.toml"):
+for name in ("info_panel.lua", "mod.toml"):
     shutil.copyfile(repo / name, payload / name)
 shutil.copytree(repo / "lib", payload / "lib", dirs_exist_ok=True)
-(ui / "plugins.toml").write_text('[[plugin]]\nsrc = "git+https://github.com/Thurbeen/thurbox-info-panel"\nfile = "thurbox-info-panel/info_panel.lua"\n')
-# Keep the release's bands and search arrangement; add a visible info column.
+(ui / "mods.toml").write_text('[[mod]]\nsrc = "git+https://github.com/Thurbeen/thurbox-info-panel"\nfile = "thurbox-info-panel/info_panel.lua"\n')
 layout = (ui / "layout.lua").read_text()
 layout = layout.replace('columns[#columns + 1] = { slot = "center" }',
     'columns[#columns + 1] = { slot = "info", len = 44 }\n    columns[#columns + 1] = { slot = "center" }')
 (ui / "layout.lua").write_text(layout)
-subprocess.run(["thurbox-cli", "plugin", "check", "--text"], check=True)
-print("Isolated plugin check passed")
+subprocess.run(["thurbox-cli", "mod", "check", "--text"], check=True)
+print("Isolated mod check passed")

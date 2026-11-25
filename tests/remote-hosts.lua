@@ -117,7 +117,7 @@ run_forget = nil
 print("Every configured host's quota is in the panel without paging")
 
 -- Old cores must report a missing API honestly, even if a report with the
--- plugin's future remote key happens to be present in the snapshot.
+-- mod's future remote key happens to be present in the snapshot.
 run_forget = nil
 thurbox.hosts = { { name = "unsupported", platform = "posix" } }
 thurbox.runs["quota.host:unsupported"] = thurbox.runs.quota
@@ -254,7 +254,7 @@ run = function(key, program, opts)
     "quota refresh may not renew credentials"
   )
   assert(opts.session == nil, "machine quotas must not depend on a live session")
-  assert(opts.machine == "local", "Thurbox runs plugin programs on this machine only")
+  assert(opts.machine == "local", "Thurbox runs mod programs on this machine only")
   assert(opts.ttl >= 60 and opts.timeout <= 30)
   local host = key:match("^quota%.host:(.+)$")
   if host then

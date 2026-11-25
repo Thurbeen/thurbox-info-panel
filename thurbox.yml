@@ -1,10 +1,10 @@
 ---
-# The plugin VM's standard library, as selene sees it.
+# The mod VM's standard library, as selene sees it.
 #
 # This file IS the sandbox contract, checked statically.
 #
-# There is deliberately **no `base:`**. `kernel::host::plugin_stdlib` grants
-# plugins `string`, `table`, `math`, `coroutine` and `utf8` and nothing else, and
+# There is deliberately **no `base:`**. `kernel::host::mod_stdlib` grants
+# mods `string`, `table`, `math`, `coroutine` and `utf8` and nothing else, and
 # the capability model is enforced by *absence* rather than by a binding that
 # refuses. Declaring the granted set and inheriting nothing
 # reproduces that exactly: `os`, `io`, `debug`, `package`, `print` and the loaders
@@ -15,17 +15,17 @@
 # that to plain functions but not to a table's fields, so `os.time()` passed
 # review while `dofile` was caught. Verified by probing both.
 #
-# Keep in step with `plugin_stdlib` and `install_api` in `src/kernel/host/`.
+# Keep in step with `mod_stdlib` and `install_api` in `crates/thurbox/src/kernel/host/`.
 # Events and the palette add nothing here on purpose: `events`, `commands` and
 # `on_event` are fields of the declaration table, and `emit` is a kind of
-# `command` — the one write channel a plugin already has.
+# `command` — the one write channel a mod already has.
 # Arguments are declared as varargs: the value here is knowing a name exists and
 # is reachable, not policing arity that Lua itself does not.
 
 globals:
   # ── Base ──────────────────────────────────────────────────────────────────
   # mlua loads the base library alongside the tables above. Listed rather than
-  # inherited so this file stays the single statement of what a plugin may touch.
+  # inherited so this file stays the single statement of what a mod may touch.
   #
   # `_G` is reachable too and is deliberately NOT here. Declaring it would buy
   # nothing — selene's own `global_usage` lint rejects `_G` whether or not the
@@ -306,9 +306,9 @@ globals:
   # read as `thurbox.platform.os` needs an entry per field or the read is an
   # error, while `sessions` stops at the table because a row is reached through
   # `[i]` — its fields are ordinary and unchecked. Declaring a field implies its
-  # parents, so only the leaves a plugin names are written out.
+  # parents, so only the leaves a mod names are written out.
   #
-  # A newly published field used by a plugin fails lint until it is added here,
+  # A newly published field used by a mod fails lint until it is added here,
   # which is the right direction for the prompt to point.
   thurbox.sessions:
     property: read-only
@@ -435,14 +435,14 @@ globals:
   # process listing can see.
   thurbox.printing:
     property: read-only
-  # Answers to the programs THIS plugin asked to be run. Set per plugin as it is
+  # Answers to the programs THIS mod asked to be run. Set per mod as it is
   # entered, so a pane reads its own and no other's.
   #
   # The one map that takes `*`. Every other is keyed by a session id and so is
   # only ever reached through a variable, which ends the checked path on its
-  # own; this one is keyed by the key the plugin itself passed to `run`, so
+  # own; this one is keyed by the key the mod itself passed to `run`, so
   # `thurbox.runs.cpu.state` IS a dotted path and was rejected. There is no
-  # field set to police — the keys are the plugin's — and `thurbox.Run` in the
+  # field set to police — the keys are the mod's — and `thurbox.Run` in the
   # definitions is what checks the answer's own fields.
   thurbox.runs:
     property: read-only
@@ -450,10 +450,10 @@ globals:
     property: read-only
   thurbox.runs.*.*:
     property: read-only
-  # Which capabilities THIS plugin has been granted, as `granted.run` /
+  # Which capabilities THIS mod has been granted, as `granted.run` /
   # `granted.program`. Present because not every capability can be withheld by
   # absence: `run` is a global, so `if not run then` is the check, but a program
-  # pane is asked for through `command`, which every plugin has. Without this a
+  # pane is asked for through `command`, which every mod has. Without this a
   # pane could not tell "you have not trusted me" from "still starting".
   #
   # One entry per capability, from `Capability::ALL`, so a third one is a third
@@ -474,7 +474,7 @@ globals:
   thurbox.metrics.sessions:
     property: read-only
   # The machine this is running on: `platform.os` / `platform.arch`, from the
-  # values the binary was built for. Here so a plugin that delivers more than one
+  # values the binary was built for. Here so a mod that delivers more than one
   # build can pick — which is why platform selection is NOT in a package manifest.
   thurbox.platform.os:
     property: read-only
@@ -507,6 +507,8 @@ globals:
   thurbox.hover.role:
     property: read-only
   # The interface's own files: where each came from, and which are running.
+  thurbox.mods:
+    property: read-only
   thurbox.plugins:
     property: read-only
   thurbox.ui_dir:
@@ -594,7 +596,7 @@ globals:
     property: read-only
   thurbox.theme.choices:
     property: read-only
-  # What every plugin declared, so help and settings render from it.
+  # What every mod declared, so help and settings render from it.
   thurbox.registry.keys:
     property: read-only
   thurbox.registry.settings:
@@ -607,11 +609,11 @@ globals:
     args:
       - type: "..."
 
-  # Persistent and private to the declaring plugin; survives a reload.
+  # Persistent and private to the declaring mod; survives a reload.
   state:
     property: new-fields
 
-  # Persistent and shared by every plugin — the bus between them.
+  # Persistent and shared by every mod — the bus between them.
   store:
     property: new-fields
 
@@ -637,14 +639,14 @@ globals:
     args:
       - type: "..."
 
-  # Loads `lib/*.lua`, and nothing outside the plugin directory.
+  # Loads `lib/*.lua`, and nothing outside the mod directory.
   require:
     args:
       - type: "..."
 
-  # Granted only to a plugin that DECLARES `capabilities = { "run" }` and that
+  # Granted only to a mod that DECLARES `capabilities = { "run" }` and that
   # the user has TRUSTED (settings → Interface → `t`). Declared here so the
-  # linters know the shape; absent at runtime for a plugin that has neither, so
+  # linters know the shape; absent at runtime for a mod that has neither, so
   # calling it there is a nil call rather than a refusal.
   run:
     args:

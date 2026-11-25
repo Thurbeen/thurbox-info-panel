@@ -23,7 +23,6 @@ for scenario in full no-session bare; do
   done
 done
 python3 tests/smoke.py
-# Remote hosts need Thurbox 2.66.0 or later; CI still installs an older release.
 if [ -n "${INFO_PANEL_CORE_BIN:-}" ]; then
   python3 tests/remote-smoke.py --core-bin-dir "$INFO_PANEL_CORE_BIN" \
     --evidence-dir .cache/remote-smoke

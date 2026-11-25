@@ -13,10 +13,10 @@ whichever `thurbox` is first on PATH.
 
 ## Install
 
-Requires Thurbox **2.51.7 or later**. Install the pane:
+Requires Thurbox **3.24.0 or later**. Install the pane:
 
 ```sh
-thurbox-cli plugin install git+https://github.com/Thurbeen/thurbox-info-panel
+thurbox-cli mod install git+https://github.com/Thurbeen/thurbox-info-panel
 ```
 
 This clones the repository into your interface directory. Add its column in
@@ -28,7 +28,7 @@ if panels.shown("info") and filled(ctx, "info") then
 end
 ```
 
-Run `thurbox-cli plugin check`, then press **F2** or click **info**. It follows
+Run `thurbox-cli mod check`, then press **F2** or click **info**. It follows
 `store.selected`; it is a readout and does not take keyboard focus. The compact
 layout below 36 columns drops the padded label column.
 
@@ -60,7 +60,7 @@ palette's **refresh account quotas on all hosts** still refresh the panel.
 executes nothing. After granting, press F2 twice or use the refresh command.
 A pending fetch shows **loading**.
 
-Thurbox runs plugin programs with `sh -c` and its own PATH, which rarely holds a
+Thurbox runs mod programs with `sh -c` and its own PATH, which rarely holds a
 Node version manager's globals (fnm, nvm, volta). So the panel looks for
 quota-axi the way your shell does: on PATH first, then through `$SHELL` as a
 login shell (`-lc`), then as an interactive one (`-ilc`), and runs it beside the
@@ -137,7 +137,7 @@ The machines come from two places, one block per machine:
   (`transport = { ssh = "me@devbox" }`), whose destination wins over
   a place for the same machine.
 
-Thurbox runs a plugin's program on this machine only, so the panel reaches a
+Thurbox runs a mod's program on this machine only, so the panel reaches a
 remote machine with a local `ssh -o BatchMode=yes -o ConnectTimeout=10 <host>`,
 which reads your `~/.ssh/config` and never prompts. It sends the same quota-axi
 lookup as above to `sh -s` there, so quota-axi is found there the way that
@@ -190,8 +190,8 @@ in the selected session when it is local, otherwise in the first local one,
 **host quota API unavailable**.
 
 Remove the scheduler with `thurbox-cli extension uninstall info-panel-refresh`;
-remove the pane with `thurbox-cli plugin remove info_panel` and remove the layout
-entry. Plugin updates use `thurbox-cli plugin update`.
+remove the pane with `thurbox-cli mod remove info_panel` and remove the layout
+entry. Mod updates use `thurbox-cli mod update`.
 
 ## Other readouts
 
@@ -225,7 +225,10 @@ unavailable, untrusted and stale readings; render tests cover 28, 44 and 80 colu
 requests from drawing. `tests/snapshots/` pins the quota section at 50 and 30 columns
 (`lua tests/snapshot.lua .cache/check/ui --update` rewrites them), and
 `tests/format.lua` pins the duration format at its boundaries.
-Native Windows CI installs and checks the same plugin.
+Native Windows CI installs and checks the same mod.
+A separate CI job installs, inspects and uninstalls the companion extension on
+Thurbox 2.51.7, its own floor (`python3 tests/extension-smoke.py`); Thurbox 3
+has no extensions.
 
 With `INFO_PANEL_CORE_BIN` naming a directory holding a `thurbox` and
 `thurbox-cli` of 2.66.0 or later, the gate also runs
@@ -246,13 +249,13 @@ lua dev/preview.lua .cache/check/ui 28 full
 
 CI runs on pull requests. Renovate maintains pinned actions
 with a seven-day release age. Versioned releases follow conventional commit
-subjects (`feat:`, `fix:`, `docs:`); the release tag and `plugin.toml` version must
+subjects (`feat:`, `fix:`, `docs:`); the release tag and `mod.toml` version must
 agree. This change does not publish a release.
 
 ## Manual test
 
 Install the PR revision in a disposable interface, place the column as above,
-and run `thurbox-cli plugin check`. Open Thurbox, press F2 and grant run in the
+and run `thurbox-cli mod check`. Open Thurbox, press F2 and grant run in the
 Interface tab. With quota-axi on PATH, use the refresh palette command: each
 configured account should show a gauge, percentage and reset countdown for every
 window at 44 columns, with binding labels highlighted, or an honest status word.

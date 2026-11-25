@@ -1,6 +1,6 @@
 name = "info-panel"
 description = "Session, git, agent, account quota and system readouts"
 version = "v0.2.0"
-requires_thurbox = ">=2.51.7"
+requires_thurbox = ">=3.24.0"
 
-pane = { source = "info_panel.lua", path = "plugins/30_info_panel.lua" }
+pane = { source = "info_panel.lua", path = "mods/30_info_panel.lua" }

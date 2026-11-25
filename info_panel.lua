@@ -1,19 +1,19 @@
--- thurbox's info panel, as a plugin.
+-- thurbox's info panel, as a mod.
 --
 -- v1 drew this in Rust (`src/ui/info_panel.rs`, 2018 lines) and the v2 kernel
 -- deleted it along with the rest of `src/ui`. This is the same panel through the
--- plugin API: the snapshot for reads, theme roles for colour, and four node
+-- mod API: the snapshot for reads, theme roles for colour, and four node
 -- kinds for everything on screen.
 --
 -- NOT bundled. Install it into your interface with:
 --
---     thurbox-cli plugin install git+https://github.com/Thurbeen/thurbox-info-panel
+--     thurbox-cli mod install git+https://github.com/Thurbeen/thurbox-info-panel
 --
 -- Two things are worth reading for what they imply about writing a pane:
 --
 -- 1. **Every number is formatted here.** The kernel publishes byte counts, token
 --    counts, durations, percentages and costs raw, so the formatters below are
---    the plugin's own. That is deliberate: a kernel that shipped "8.0/16.0 GB"
+--    the mod's own. That is deliberate: a kernel that shipped "8.0/16.0 GB"
 --    would leave a pane arranging strings someone else composed.
 -- 2. **Nothing here reads a clock.** The sandbox grants no `os`, so every age
 --    and countdown is measured against `thurbox.taken_at_ms` — the instant the
@@ -255,7 +255,7 @@ end
 --- Clip a list of styled spans to `room` characters.
 ---
 --- The renderer clips an overlong row at the border anyway. Doing it here means
---- the PLUGIN chooses what goes, and these rows are built most-important-first,
+--- the MOD chooses what goes, and these rows are built most-important-first,
 --- so what goes is the tail. A span that does not fit WHOLE is dropped rather
 --- than cut — `+214 / …` reads as a broken number — along with any separator it
 --- leaves dangling. Only a first span is ever cut, since dropping it leaves nothing.
@@ -300,7 +300,7 @@ local function field_more(label, value, style, width)
 end
 
 --- A row whose value is assembled from several styled spans — `+12 / -3`, where
---- each half carries its own colour. One line: these are numbers the plugin
+--- each half carries its own colour. One line: these are numbers the mod
 --- composed itself, and clipping the tail reads better than wrapping two of them.
 local function spans_field(label, spans, width)
   local prefix, _, room = shape(label, width)
@@ -1362,8 +1362,8 @@ return {
       refresh_quota()
       -- Visibility, not focus, and it belongs in `lib.panels` rather than in this
       -- file because `layout.lua` has to read it: the arrangement decides whether
-      -- to carve the column BEFORE this plugin runs, so the answer cannot live
-      -- inside the plugin. The bundled session list spells its F9 the same way.
+      -- to carve the column BEFORE this mod runs, so the answer cannot live
+      -- inside the mod. The bundled session list spells its F9 the same way.
       panels.toggle(NAME)
       return true
     end
