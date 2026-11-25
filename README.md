@@ -207,7 +207,7 @@ entry. Mod updates use `thurbox-cli mod update`.
 **Runtime** names the place the session runs on in the wording of Thurbox's
 place picker: **this machine (herdr)** for a runtime's local place, **a mux
 place** for another one. It reads `session.place`, published since Thurbox
-**VERSION**; on an older Thurbox the row is omitted. Until the session's Fleet
+**3.26.0**; on an older Thurbox the row is omitted. Until the session's Fleet
 has listed its places, the row shows the place's own name, such as `herdr/local`.
 
 Absent metrics are omitted. Process CPU can exceed one core, so it is a plain
