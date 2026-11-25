@@ -197,12 +197,18 @@ entry. Mod updates use `thurbox-cli mod update`.
 
 | Section | Source |
 | --- | --- |
-| Session, parent, host, activity and signal | selected session snapshot |
+| Session, parent, host, runtime, activity and signal | selected session snapshot |
 | Repositories, base, changes and sync | session directories and git snapshot |
 | Process CPU and RAM | `metrics.sessions[id]` |
 | Agent cost, tokens, context, time, cache and lines | optional agent statusline metrics |
 | System CPU and RAM | `metrics.system` |
 | Enabled automations and schedules | `thurbox.automations` |
+
+**Runtime** names the place the session runs on in the wording of Thurbox's
+place picker: **this machine (herdr)** for a runtime's local place, **a mux
+place** for another one. It reads `session.place`, published since Thurbox
+**3.26.0**; on an older Thurbox the row is omitted. Until the session's Fleet
+has listed its places, the row shows the place's own name, such as `herdr/local`.
 
 Absent metrics are omitted. Process CPU can exceed one core, so it is a plain
 percentage rather than a capped gauge. The old agent/host-specific usage section
