@@ -29,6 +29,19 @@ jobs:
           echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
       - name: Gate
         run: bash scripts/check.sh
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the extension's Thurbox floor
+        run: |
+          mkdir -p "$RUNNER_TEMP/tools"
+          curl -fsSL https://github.com/Thurbeen/thurbox/releases/download/v2.51.7/thurbox-v2.51.7-x86_64-unknown-linux-gnu.tar.gz -o "$RUNNER_TEMP/thurbox.tar.gz"
+          echo "f795a1c2009fed55b282fb340a91e15fb9b989bf91ff4fa20838b08fcc6588bb  $RUNNER_TEMP/thurbox.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/thurbox.tar.gz" -C "$RUNNER_TEMP/tools"
+          echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
+      - name: Extension smoke
+        run: python3 tests/extension-smoke.py
   windows:
     runs-on: windows-latest
     steps:

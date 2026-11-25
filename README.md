@@ -226,6 +226,9 @@ requests from drawing. `tests/snapshots/` pins the quota section at 50 and 30 co
 (`lua tests/snapshot.lua .cache/check/ui --update` rewrites them), and
 `tests/format.lua` pins the duration format at its boundaries.
 Native Windows CI installs and checks the same mod.
+A separate CI job installs, inspects and uninstalls the companion extension on
+Thurbox 2.51.7, its own floor (`python3 tests/extension-smoke.py`); Thurbox 3
+has no extensions.
 
 With `INFO_PANEL_CORE_BIN` naming a directory holding a `thurbox` and
 `thurbox-cli` of 2.66.0 or later, the gate also runs
